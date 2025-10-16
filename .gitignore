@@ -1,0 +1,41 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build & distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ython cache and compiled files (recursive)
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+
+# Testing / coverage
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.log
+
+# IDE & editor stuff
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local configs / secrets
+.env
+*.local
+*.bak
+*.tmp
