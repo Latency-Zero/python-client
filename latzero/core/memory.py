@@ -3,13 +3,14 @@ latzero.core.memory - Dynamic shared memory data storage.
 
 Manages data storage in shared memory segments with:
 - Dynamic expansion when data grows
-- Chained segments for large data
 - Optimized serialization (msgpack default, pickle fallback)
+- Lazy refresh for better performance
 """
 
 import multiprocessing.shared_memory as shm
 import struct
 import time
+import threading
 from typing import Optional, Any, Dict, List
 
 from .locking import StripedLock, ReadWriteLock
@@ -41,11 +42,11 @@ class Serializer:
     PICKLE_HEADER = b'\x02'
     COMPRESSED_FLAG = 0x80  # High bit set = compressed
     
-    def __init__(self, prefer_msgpack: bool = True, compress_threshold: int = 1024):
+    def __init__(self, prefer_msgpack: bool = True, compress_threshold: int = 10240):
         """
         Args:
             prefer_msgpack: Use msgpack when possible (faster)
-            compress_threshold: Compress data larger than this (bytes). 0 = never, -1 = always
+            compress_threshold: Compress data larger than this (bytes). -1 = never
         """
         self._use_msgpack = prefer_msgpack and HAS_MSGPACK
         self._compress_threshold = compress_threshold
@@ -67,10 +68,10 @@ class Serializer:
             data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
             header = self.PICKLE_HEADER[0]
         
-        # Compress if beneficial
+        # Compress if beneficial (only for large data)
         if self._compress_threshold >= 0 and len(data) > self._compress_threshold:
             compressed = zlib.compress(data, level=1)  # Level 1 = fast
-            if len(compressed) < len(data):
+            if len(compressed) < len(data) * 0.9:  # Only if 10%+ savings
                 data = compressed
                 header |= self.COMPRESSED_FLAG
         
@@ -104,7 +105,7 @@ def get_serializer() -> Serializer:
     return _serializer
 
 
-def configure_serializer(prefer_msgpack: bool = True, compress_threshold: int = 1024) -> None:
+def configure_serializer(prefer_msgpack: bool = True, compress_threshold: int = 10240) -> None:
     """Configure the global serializer."""
     global _serializer
     _serializer = Serializer(prefer_msgpack, compress_threshold)
@@ -119,6 +120,7 @@ class SharedMemoryPoolData:
     - Efficient binary format with length prefixes
     - Per-key locking via StripedLock
     - Lazy cleanup of expired entries
+    - Cached reads with dirty tracking for performance
     """
 
     INITIAL_SIZE = 1024 * 1024      # 1MB initial
@@ -126,13 +128,13 @@ class SharedMemoryPoolData:
     MAX_SIZE = 100 * 1024 * 1024    # 100MB max
     
     # Memory layout:
-    # [8 bytes: data_length][8 bytes: current_capacity][data...]
+    # [8 bytes: data_length][8 bytes: version][data...]
     HEADER_SIZE = 16
 
     __slots__ = (
         'shm_name', 'encryption', 'auth_key', 'is_creator',
         'shm', '_data', '_lock', '_key_locks', '_serializer',
-        '_current_size'
+        '_current_size', '_version', '_last_read_version', '_dirty'
     )
 
     def __init__(
@@ -147,10 +149,13 @@ class SharedMemoryPoolData:
         self.auth_key = auth_key
         self.is_creator = False
         self._serializer = serializer or get_serializer()
-        self._lock = ReadWriteLock()
+        self._lock = threading.RLock()
         self._key_locks = StripedLock(num_stripes=64)
         self._data: Dict[str, dict] = {}
         self._current_size = self.INITIAL_SIZE
+        self._version = 0
+        self._last_read_version = -1
+        self._dirty = False
 
         try:
             # Try to connect to existing shared memory
@@ -167,7 +172,7 @@ class SharedMemoryPoolData:
                 self.is_creator = True
                 self._current_size = self.INITIAL_SIZE
                 # Initialize with empty data
-                self._write_data({})
+                self._write_data_raw({})
             except FileExistsError:
                 # Race: another process created it
                 self.shm = shm.SharedMemory(name=shm_name, create=False)
@@ -175,10 +180,10 @@ class SharedMemoryPoolData:
             except Exception as e:
                 raise RuntimeError(f"Could not create shared memory for pool {shm_name}: {e}")
 
-        self._data = self._read_data()
+        self._sync_from_shm()
 
-    def _write_data(self, data: dict) -> None:
-        """Write data dict to shared memory."""
+    def _write_data_raw(self, data: dict) -> None:
+        """Write data dict to shared memory (low-level)."""
         serialized = self._serializer.serialize(data)
         total_needed = len(serialized) + self.HEADER_SIZE
         
@@ -186,25 +191,45 @@ class SharedMemoryPoolData:
         if total_needed > self._current_size:
             self._expand_memory(total_needed)
         
-        # Write: [length][capacity][data]
+        self._version += 1
+        
+        # Write: [length][version][data]
         length_bytes = struct.pack('Q', len(serialized))
-        capacity_bytes = struct.pack('Q', self._current_size)
+        version_bytes = struct.pack('Q', self._version)
         
         self.shm.buf[:8] = length_bytes
-        self.shm.buf[8:16] = capacity_bytes
+        self.shm.buf[8:16] = version_bytes
         self.shm.buf[self.HEADER_SIZE:self.HEADER_SIZE + len(serialized)] = serialized
 
-    def _read_data(self) -> dict:
-        """Read data dict from shared memory."""
+    def _read_data_raw(self) -> tuple:
+        """Read data dict from shared memory (low-level). Returns (data, version)."""
         try:
             length = struct.unpack('Q', bytes(self.shm.buf[:8]))[0]
+            version = struct.unpack('Q', bytes(self.shm.buf[8:16]))[0]
+            
             if length == 0:
-                return {}
+                return {}, version
             
             data_bytes = bytes(self.shm.buf[self.HEADER_SIZE:self.HEADER_SIZE + length])
-            return self._serializer.deserialize(data_bytes)
+            return self._serializer.deserialize(data_bytes), version
         except Exception:
-            return {}
+            return {}, 0
+
+    def _sync_from_shm(self) -> bool:
+        """Sync local cache from shared memory if version changed. Returns True if synced."""
+        data, version = self._read_data_raw()
+        if version != self._last_read_version:
+            self._data = data
+            self._last_read_version = version
+            self._version = version
+            return True
+        return False
+
+    def _sync_to_shm(self) -> None:
+        """Write local cache to shared memory."""
+        self._write_data_raw(self._data)
+        self._dirty = False
+        self._last_read_version = self._version
 
     def _expand_memory(self, needed_size: int) -> None:
         """
@@ -229,12 +254,8 @@ class SharedMemoryPoolData:
         if old_length > 0:
             new_shm.buf[:self.HEADER_SIZE + old_length] = self.shm.buf[:self.HEADER_SIZE + old_length]
         
-        # Update capacity in new segment
-        new_shm.buf[8:16] = struct.pack('Q', new_size)
-        
         # Close old segment
         old_shm = self.shm
-        old_name = self.shm_name
         
         # Switch to new segment
         self.shm = new_shm
@@ -249,20 +270,10 @@ class SharedMemoryPoolData:
         except Exception:
             pass
 
-    def refresh(self) -> None:
-        """Refresh data from shared memory."""
-        with self._lock.read():
-            self._data = self._read_data()
-
-    def save(self) -> None:
-        """Save data to shared memory."""
-        with self._lock.write():
-            self._write_data(self._data)
-
     def get(self, key: str) -> Any:
         """Get a value by key."""
-        with self._key_locks.acquire(key):
-            self.refresh()
+        with self._lock:
+            # Use cached data - caller should call refresh() if multi-process sync needed
             entry = self._data.get(key)
             if not entry:
                 return None
@@ -272,7 +283,7 @@ class SharedMemoryPoolData:
                 elapsed = time.time() - entry['timestamp']
                 if elapsed > entry['auto_clean']:
                     del self._data[key]
-                    self.save()
+                    self._dirty = True
                     return None
 
             value = entry['value']
@@ -286,11 +297,17 @@ class SharedMemoryPoolData:
 
             return value
 
-    def set(self, key: str, value: Any, auto_clean: Optional[int] = None) -> None:
-        """Set a value by key."""
-        with self._key_locks.acquire(key):
-            self.refresh()
-            
+    def set(self, key: str, value: Any, auto_clean: Optional[int] = None, _sync: bool = True) -> None:
+        """Set a value by key.
+        
+        Args:
+            key: Key name
+            value: Value to store
+            auto_clean: Auto-expire after N seconds
+            _sync: If True, sync to shared memory immediately (default). 
+                   Set to False for batched operations, then call flush().
+        """
+        with self._lock:
             stored_value = value
             
             # Handle encryption
@@ -303,85 +320,132 @@ class SharedMemoryPoolData:
             self._data[key] = {
                 'value': stored_value,
                 'timestamp': time.time(),
-                'auto_clean': auto_clean
+                'auto_clean': auto_clean,
             }
+            
+            self._dirty = True
+            if _sync:
+                self._sync_to_shm()
 
-            self.save()
+    def set_fast(self, key: str, value: Any, auto_clean: Optional[int] = None) -> None:
+        """Set a value without immediate sync - much faster for batched operations.
+        
+        Call flush() when done to persist to shared memory.
+        """
+        self.set(key, value, auto_clean, _sync=False)
+
+    def flush(self) -> None:
+        """Flush pending writes to shared memory.
+        
+        Call this after batched set_fast() calls to persist data.
+        """
+        with self._lock:
+            if self._dirty:
+                self._sync_to_shm()
 
     def delete(self, key: str) -> bool:
         """Delete a key. Returns True if key existed."""
-        with self._key_locks.acquire(key):
-            self.refresh()
+        with self._lock:
             if key in self._data:
                 del self._data[key]
-                self.save()
+                self._dirty = True
+                self._sync_to_shm()
                 return True
             return False
 
     def exists(self, key: str) -> bool:
-        """Check if key exists (respects auto_clean)."""
-        return self.get(key) is not None
+        """Check if key exists."""
+        with self._lock:
+            return key in self._data
+
+    def keys(self) -> List[str]:
+        """Get all keys."""
+        with self._lock:
+            return list(self._data.keys())
 
     def keys_with_prefix(self, prefix: str) -> List[str]:
-        """Get all keys with a given prefix."""
-        self.refresh()
-        return [k for k in self._data.keys() if k.startswith(prefix)]
+        """Get keys matching prefix."""
+        with self._lock:
+            return [k for k in self._data.keys() if k.startswith(prefix)]
 
-    def all_keys(self) -> List[str]:
-        """Get all keys in the pool."""
-        self.refresh()
-        return list(self._data.keys())
+    def size(self) -> int:
+        """Get number of keys."""
+        with self._lock:
+            return len(self._data)
+
+    def items(self) -> List[tuple]:
+        """Get all (key, value) pairs."""
+        with self._lock:
+            result = []
+            for key, entry in self._data.items():
+                value = entry['value']
+                if self.encryption and isinstance(value, str) and value.startswith('enc:'):
+                    from .encryption import decrypt_data
+                    enc_bytes = bytes.fromhex(value[4:])
+                    decrypted = decrypt_data(enc_bytes, self.auth_key)
+                    value = self._serializer.deserialize(decrypted)
+                result.append((key, value))
+            return result
+
+    def clear(self) -> None:
+        """Clear all data."""
+        with self._lock:
+            self._data = {}
+            self._sync_to_shm()
 
     def cleanup_expired(self) -> int:
-        """
-        Remove expired entries.
-        
-        Returns:
-            Number of entries removed
-        """
-        current_time = time.time()
-        
-        with self._lock.write():
-            self._data = self._read_data()
+        """Remove expired entries. Returns count removed."""
+        with self._lock:
+            now = time.time()
             to_remove = []
             
             for key, entry in self._data.items():
                 if entry.get('auto_clean'):
-                    if current_time - entry['timestamp'] > entry['auto_clean']:
+                    elapsed = now - entry['timestamp']
+                    if elapsed > entry['auto_clean']:
                         to_remove.append(key)
-
+            
             for key in to_remove:
                 del self._data[key]
-
+            
             if to_remove:
-                self._write_data(self._data)
+                self._dirty = True
+                self._sync_to_shm()
             
             return len(to_remove)
 
-    def size(self) -> int:
-        """Get number of keys."""
-        self.refresh()
-        return len(self._data)
-
     def memory_usage(self) -> dict:
-        """Get memory usage stats."""
-        length = struct.unpack('Q', bytes(self.shm.buf[:8]))[0]
-        return {
-            'used_bytes': length,
-            'capacity_bytes': self._current_size,
-            'utilization': length / self._current_size if self._current_size > 0 else 0,
-            'max_bytes': self.MAX_SIZE
-        }
+        """Get memory usage statistics."""
+        with self._lock:
+            length = struct.unpack('Q', bytes(self.shm.buf[:8]))[0]
+            return {
+                'used_bytes': length + self.HEADER_SIZE,
+                'capacity_bytes': self._current_size,
+                'max_bytes': self.MAX_SIZE,
+                'utilization': (length + self.HEADER_SIZE) / self._current_size,
+            }
 
     def close(self) -> None:
-        """Close shared memory access."""
-        if hasattr(self, 'shm') and self.shm is not None:
-            try:
-                self.shm.close()
-                if self.is_creator:
-                    self.shm.unlink()
-            except Exception:
-                pass
+        """Close the shared memory connection."""
+        try:
+            self.shm.close()
+        except Exception:
+            pass
 
-    def __del__(self):
-        self.close()
+    def destroy(self) -> None:
+        """Destroy the shared memory segment."""
+        try:
+            self.shm.close()
+            self.shm.unlink()
+        except Exception:
+            pass
+
+    def refresh(self) -> None:
+        """Force refresh from shared memory (for compatibility)."""
+        with self._lock:
+            self._sync_from_shm()
+
+    def save(self) -> None:
+        """Force save to shared memory (for compatibility)."""
+        with self._lock:
+            self._sync_to_shm()
