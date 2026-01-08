@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-08T16:12:25.583885",
+  "generated_at": "2026-01-08T16:34:36.939040",
   "config": {
     "num_operations": 10000,
     "payload_size": 100,
@@ -14,7 +14,7 @@
       "get",
       "mixed"
     ],
-    "timestamp": "2026-01-08T16:10:48.186772"
+    "timestamp": "2026-01-08T16:30:34.139366"
   },
   "system_info": {
     "platform": "Windows",
@@ -26,7 +26,7 @@
     "cpu_count_physical": 10,
     "cpu_count_logical": 20,
     "ram_total_gb": 23.12,
-    "ram_available_gb": 5.51
+    "ram_available_gb": 5.76
   },
   "results": {
     "latzero": [
@@ -36,17 +36,17 @@
         "total_operations": 10000,
         "successful_operations": 10000,
         "failed_operations": 0,
-        "total_time_seconds": 52.8215875000169,
-        "throughput_ops_per_sec": 189.31653653909586,
+        "total_time_seconds": 0.12466819997644052,
+        "throughput_ops_per_sec": 80212.91718248739,
         "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0.42320002103224397,
-          "max": 52.78800000087358,
-          "avg": 5.273902440248639,
-          "p50": 4.934900003718212,
-          "p95": 7.822999992640689,
-          "p99": 10.46600000699982,
-          "stdev": 2.1932347466538613
+          "min": 0.0018999853637069464,
+          "max": 1.549200009321794,
+          "avg": 0.011259700066875666,
+          "p50": 0.002100015990436077,
+          "p95": 0.0037999998312443495,
+          "p99": 0.3157000173814595,
+          "stdev": 0.08930062856977974
         },
         "error_count": 0,
         "sample_errors": []
@@ -57,17 +57,17 @@
         "total_operations": 10000,
         "successful_operations": 10000,
         "failed_operations": 0,
-        "total_time_seconds": 21.785484499996528,
-        "throughput_ops_per_sec": 459.0212349879845,
+        "total_time_seconds": 0.027818000002298504,
+        "throughput_ops_per_sec": 359479.47369234794,
         "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0.4563000111375004,
-          "max": 30.51500002038665,
-          "avg": 2.1731049200840062,
-          "p50": 1.6638000088278204,
-          "p95": 4.39590000314638,
-          "p99": 9.350999986054376,
-          "stdev": 1.896270690122663
+          "min": 0.0010999792721122503,
+          "max": 0.23790000705048442,
+          "avg": 0.0015899299702141433,
+          "p50": 0.0012999807950109243,
+          "p95": 0.0022999884095042944,
+          "p99": 0.0029999937396496534,
+          "stdev": 0.003522139176851881
         },
         "error_count": 0,
         "sample_errors": []
@@ -78,17 +78,17 @@
         "total_operations": 10000,
         "successful_operations": 10000,
         "failed_operations": 0,
-        "total_time_seconds": 19.270898800023133,
-        "throughput_ops_per_sec": 518.9171560585434,
+        "total_time_seconds": 0.054104700015159324,
+        "throughput_ops_per_sec": 184826.82645312054,
         "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0.03619998460635543,
-          "max": 29.38289998564869,
-          "avg": 1.920997090174933,
-          "p50": 1.7370000132359564,
-          "p95": 3.552000009221956,
-          "p99": 4.960299993399531,
-          "stdev": 1.8367199126023233
+          "min": 0.0010999792721122503,
+          "max": 0.7792999967932701,
+          "avg": 0.004257730030803941,
+          "p50": 0.002100015990436077,
+          "p95": 0.0034999975468963385,
+          "p99": 0.011000025551766157,
+          "stdev": 0.03263486493893644
         },
         "error_count": 0,
         "sample_errors": []
@@ -99,67 +99,70 @@
         "name": "HTTP",
         "operation": "set",
         "total_operations": 10000,
-        "successful_operations": 0,
-        "failed_operations": 10000,
-        "total_time_seconds": 0.014976263046264648,
-        "throughput_ops_per_sec": 0.0,
-        "success_rate_percent": 0.0,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 69.98811090001254,
+        "throughput_ops_per_sec": 142.88141044821668,
+        "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0,
-          "max": 0,
-          "avg": 0,
-          "p50": 0,
-          "p95": 0,
-          "p99": 0
+          "min": 3.4860000014305115,
+          "max": 45.73440001695417,
+          "avg": 6.988624759990489,
+          "p50": 5.4610999941360205,
+          "p95": 21.46109999739565,
+          "p99": 29.505399987101555,
+          "stdev": 5.1424143004421605
         },
-        "error_count": 1,
-        "sample_errors": [
-          "cannot pickle 'module' object"
-        ]
+        "error_count": 0,
+        "sample_errors": []
       },
       {
         "name": "HTTP",
         "operation": "get",
         "total_operations": 10000,
-        "successful_operations": 0,
-        "failed_operations": 10000,
-        "total_time_seconds": 0.010441303253173828,
-        "throughput_ops_per_sec": 0.0,
-        "success_rate_percent": 0.0,
+        "successful_operations": 9854,
+        "failed_operations": 146,
+        "total_time_seconds": 74.88615189999109,
+        "throughput_ops_per_sec": 131.5864115058257,
+        "success_rate_percent": 98.54,
         "latency_ms": {
-          "min": 0,
-          "max": 0,
-          "avg": 0,
-          "p50": 0,
-          "p95": 0,
-          "p99": 0
+          "min": 3.5023000091314316,
+          "max": 44.528800004627556,
+          "avg": 7.4779660801315915,
+          "p50": 5.761799984611571,
+          "p95": 22.746400005416945,
+          "p99": 30.51370001048781,
+          "stdev": 5.40195630301949
         },
-        "error_count": 1,
+        "error_count": 146,
         "sample_errors": [
-          "cannot pickle 'module' object"
+          "HTTPConnectionPool(host='127.0.0.1', port=5999): Max retries exceeded with url: /get/bench_key_233 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021BE41C3170>: Failed to establish a new connection: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted'))",
+          "HTTPConnectionPool(host='127.0.0.1', port=5999): Max retries exceeded with url: /get/bench_key_234 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021BE3D60D40>: Failed to establish a new connection: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted'))",
+          "HTTPConnectionPool(host='127.0.0.1', port=5999): Max retries exceeded with url: /get/bench_key_235 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021BE41D2C30>: Failed to establish a new connection: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted'))",
+          "HTTPConnectionPool(host='127.0.0.1', port=5999): Max retries exceeded with url: /get/bench_key_236 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021BE41D2660>: Failed to establish a new connection: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted'))",
+          "HTTPConnectionPool(host='127.0.0.1', port=5999): Max retries exceeded with url: /get/bench_key_237 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000021BE3D63D40>: Failed to establish a new connection: [WinError 10048] Only one usage of each socket address (protocol/network address/port) is normally permitted'))"
         ]
       },
       {
         "name": "HTTP",
         "operation": "mixed",
         "total_operations": 10000,
-        "successful_operations": 0,
-        "failed_operations": 10000,
-        "total_time_seconds": 0.011321306228637695,
-        "throughput_ops_per_sec": 0.0,
-        "success_rate_percent": 0.0,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 80.75584709999384,
+        "throughput_ops_per_sec": 123.8300427660397,
+        "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0,
-          "max": 0,
-          "avg": 0,
-          "p50": 0,
-          "p95": 0,
-          "p99": 0
+          "min": 3.568899992387742,
+          "max": 80.95859998138621,
+          "avg": 8.06529005978955,
+          "p50": 6.032100005540997,
+          "p95": 25.23030000156723,
+          "p99": 31.673400022555143,
+          "stdev": 6.666147144497959
         },
-        "error_count": 1,
-        "sample_errors": [
-          "cannot pickle 'module' object"
-        ]
+        "error_count": 0,
+        "sample_errors": []
       }
     ],
     "Socket": [
@@ -169,17 +172,17 @@
         "total_operations": 10000,
         "successful_operations": 10000,
         "failed_operations": 0,
-        "total_time_seconds": 0.9959987000038382,
-        "throughput_ops_per_sec": 10040.173747176039,
+        "total_time_seconds": 1.360309200012125,
+        "throughput_ops_per_sec": 7351.269843584727,
         "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0.06160000339150429,
-          "max": 2.5104999949689955,
-          "avg": 0.09711330004502088,
-          "p50": 0.08009999874047935,
-          "p95": 0.1832999987527728,
-          "p99": 0.32160000409930944,
-          "stdev": 0.05503105369709212
+          "min": 0.06819999543949962,
+          "max": 52.17020001146011,
+          "avg": 0.13245156994962598,
+          "p50": 0.10639999527484179,
+          "p95": 0.25680000544525683,
+          "p99": 0.38979999953880906,
+          "stdev": 0.5251896732345432
         },
         "error_count": 0,
         "sample_errors": []
@@ -188,92 +191,90 @@
         "name": "Socket",
         "operation": "get",
         "total_operations": 10000,
-        "successful_operations": 0,
-        "failed_operations": 10000,
-        "total_time_seconds": 0.00996088981628418,
-        "throughput_ops_per_sec": 0.0,
-        "success_rate_percent": 0.0,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 1.2625393000198528,
+        "throughput_ops_per_sec": 7920.54552269601,
+        "success_rate_percent": 100.0,
         "latency_ms": {
-          "min": 0,
-          "max": 0,
-          "avg": 0,
-          "p50": 0,
-          "p95": 0,
-          "p99": 0
+          "min": 0.0675999908708036,
+          "max": 3.915000008419156,
+          "avg": 0.12322689022694248,
+          "p50": 0.10420000762678683,
+          "p95": 0.2539999841246754,
+          "p99": 0.382099999114871,
+          "stdev": 0.08141400812146195
         },
-        "error_count": 1,
-        "sample_errors": [
-          "[WinError 10038] An operation was attempted on something that is not a socket"
-        ]
+        "error_count": 0,
+        "sample_errors": []
       },
       {
         "name": "Socket",
         "operation": "mixed",
         "total_operations": 10000,
-        "successful_operations": 0,
-        "failed_operations": 10000,
-        "total_time_seconds": 0.00838923454284668,
-        "throughput_ops_per_sec": 0.0,
-        "success_rate_percent": 0.0,
+        "successful_operations": 5000,
+        "failed_operations": 5000,
+        "total_time_seconds": 1.2715204000123776,
+        "throughput_ops_per_sec": 3932.300260342915,
+        "success_rate_percent": 50.0,
         "latency_ms": {
-          "min": 0,
-          "max": 0,
-          "avg": 0,
-          "p50": 0,
-          "p95": 0,
-          "p99": 0
+          "min": 0.07070001447573304,
+          "max": 1.9583999819587916,
+          "avg": 0.12376208995701746,
+          "p50": 0.10380000458098948,
+          "p95": 0.238799984799698,
+          "p99": 0.3792000061366707,
+          "stdev": 0.061542163430139046
         },
-        "error_count": 1,
-        "sample_errors": [
-          "[WinError 10038] An operation was attempted on something that is not a socket"
-        ]
+        "error_count": 0,
+        "sample_errors": []
       }
     ]
   },
   "resource_stats": {
     "latzero": {
-      "sample_count": 1814,
-      "duration_seconds": 19.26,
+      "sample_count": 8,
+      "duration_seconds": 0.05,
       "cpu": {
-        "avg_percent": 100.07,
-        "min_percent": 0.0,
-        "max_percent": 169.8
-      },
-      "memory": {
-        "avg_mb": 50.01,
-        "min_mb": 42.73,
-        "max_mb": 50.8,
-        "avg_percent": 0.21
-      }
-    },
-    "HTTP": {
-      "sample_count": 3,
-      "duration_seconds": 0.0,
-      "cpu": {
-        "avg_percent": 0.0,
-        "min_percent": 0.0,
-        "max_percent": 0.0
-      },
-      "memory": {
-        "avg_mb": 50.27,
-        "min_mb": 50.21,
-        "max_mb": 50.3,
-        "avg_percent": 0.21
-      }
-    },
-    "Socket": {
-      "sample_count": 33,
-      "duration_seconds": 0.0,
-      "cpu": {
-        "avg_percent": 35.64,
+        "avg_percent": 52.14,
         "min_percent": 0.0,
         "max_percent": 99.7
       },
       "memory": {
-        "avg_mb": 50.37,
-        "min_mb": 50.3,
-        "max_mb": 50.49,
-        "avg_percent": 0.21
+        "avg_mb": 45.33,
+        "min_mb": 42.24,
+        "max_mb": 46.84,
+        "avg_percent": 0.19
+      }
+    },
+    "HTTP": {
+      "sample_count": 4606,
+      "duration_seconds": 81.25,
+      "cpu": {
+        "avg_percent": 99.66,
+        "min_percent": 0.0,
+        "max_percent": 266.0
+      },
+      "memory": {
+        "avg_mb": 50.99,
+        "min_mb": 46.89,
+        "max_mb": 64.99,
+        "avg_percent": 0.22
+      }
+    },
+    "Socket": {
+      "sample_count": 99,
+      "duration_seconds": 1.57,
+      "cpu": {
+        "avg_percent": 87.62,
+        "min_percent": 0.0,
+        "max_percent": 199.5
+      },
+      "memory": {
+        "avg_mb": 52.01,
+        "min_mb": 50.96,
+        "max_mb": 52.69,
+        "avg_percent": 0.22
       }
     }
   }

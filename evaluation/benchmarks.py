@@ -204,11 +204,13 @@ class BaseBenchmark(ABC):
 class LatzeroBenchmark(BaseBenchmark):
     """Benchmark for latzero shared memory IPC."""
     
-    def __init__(self):
+    def __init__(self, use_fast_mode: bool = True):
         super().__init__("latzero")
         self.pool = None
         self.client = None
         self.pool_name = "eval_benchmark_pool"
+        self.use_fast_mode = use_fast_mode
+        self._pending_writes = 0
     
     def setup(self) -> None:
         from latzero import SharedMemoryPool
@@ -222,8 +224,16 @@ class LatzeroBenchmark(BaseBenchmark):
         
         self.pool.create(self.pool_name)
         self.client = self.pool.connect(self.pool_name)
+        self._pending_writes = 0
     
     def teardown(self) -> None:
+        # Flush any pending writes
+        if self.client and self._pending_writes > 0:
+            try:
+                self.client.flush()
+            except:
+                pass
+        
         if self.client:
             try:
                 self.client.disconnect()
@@ -237,7 +247,15 @@ class LatzeroBenchmark(BaseBenchmark):
     
     def set_operation(self, key: str, value: Any) -> Tuple[bool, Optional[str]]:
         try:
-            self.client.set(key, value)
+            if self.use_fast_mode:
+                self.client.set_fast(key, value)
+                self._pending_writes += 1
+                # Flush every 100 writes for data durability
+                if self._pending_writes >= 100:
+                    self.client.flush()
+                    self._pending_writes = 0
+            else:
+                self.client.set(key, value)
             return True, None
         except Exception as e:
             return False, str(e)

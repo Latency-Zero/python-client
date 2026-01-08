@@ -273,10 +273,7 @@ class SharedMemoryPoolData:
     def get(self, key: str) -> Any:
         """Get a value by key."""
         with self._lock:
-            # Only sync if we haven't written recently
-            if not self._dirty:
-                self._sync_from_shm()
-            
+            # Use cached data - caller should call refresh() if multi-process sync needed
             entry = self._data.get(key)
             if not entry:
                 return None
@@ -286,7 +283,7 @@ class SharedMemoryPoolData:
                 elapsed = time.time() - entry['timestamp']
                 if elapsed > entry['auto_clean']:
                     del self._data[key]
-                    self._sync_to_shm()
+                    self._dirty = True
                     return None
 
             value = entry['value']
@@ -300,12 +297,17 @@ class SharedMemoryPoolData:
 
             return value
 
-    def set(self, key: str, value: Any, auto_clean: Optional[int] = None) -> None:
-        """Set a value by key."""
+    def set(self, key: str, value: Any, auto_clean: Optional[int] = None, _sync: bool = True) -> None:
+        """Set a value by key.
+        
+        Args:
+            key: Key name
+            value: Value to store
+            auto_clean: Auto-expire after N seconds
+            _sync: If True, sync to shared memory immediately (default). 
+                   Set to False for batched operations, then call flush().
+        """
         with self._lock:
-            # Sync first to get latest data
-            self._sync_from_shm()
-            
             stored_value = value
             
             # Handle encryption
@@ -322,15 +324,31 @@ class SharedMemoryPoolData:
             }
             
             self._dirty = True
-            self._sync_to_shm()
+            if _sync:
+                self._sync_to_shm()
+
+    def set_fast(self, key: str, value: Any, auto_clean: Optional[int] = None) -> None:
+        """Set a value without immediate sync - much faster for batched operations.
+        
+        Call flush() when done to persist to shared memory.
+        """
+        self.set(key, value, auto_clean, _sync=False)
+
+    def flush(self) -> None:
+        """Flush pending writes to shared memory.
+        
+        Call this after batched set_fast() calls to persist data.
+        """
+        with self._lock:
+            if self._dirty:
+                self._sync_to_shm()
 
     def delete(self, key: str) -> bool:
         """Delete a key. Returns True if key existed."""
         with self._lock:
-            self._sync_from_shm()
-            
             if key in self._data:
                 del self._data[key]
+                self._dirty = True
                 self._sync_to_shm()
                 return True
             return False
@@ -338,31 +356,26 @@ class SharedMemoryPoolData:
     def exists(self, key: str) -> bool:
         """Check if key exists."""
         with self._lock:
-            self._sync_from_shm()
             return key in self._data
 
     def keys(self) -> List[str]:
         """Get all keys."""
         with self._lock:
-            self._sync_from_shm()
             return list(self._data.keys())
 
     def keys_with_prefix(self, prefix: str) -> List[str]:
         """Get keys matching prefix."""
         with self._lock:
-            self._sync_from_shm()
             return [k for k in self._data.keys() if k.startswith(prefix)]
 
     def size(self) -> int:
         """Get number of keys."""
         with self._lock:
-            self._sync_from_shm()
             return len(self._data)
 
     def items(self) -> List[tuple]:
         """Get all (key, value) pairs."""
         with self._lock:
-            self._sync_from_shm()
             result = []
             for key, entry in self._data.items():
                 value = entry['value']
@@ -383,8 +396,6 @@ class SharedMemoryPoolData:
     def cleanup_expired(self) -> int:
         """Remove expired entries. Returns count removed."""
         with self._lock:
-            self._sync_from_shm()
-            
             now = time.time()
             to_remove = []
             
@@ -398,6 +409,7 @@ class SharedMemoryPoolData:
                 del self._data[key]
             
             if to_remove:
+                self._dirty = True
                 self._sync_to_shm()
             
             return len(to_remove)

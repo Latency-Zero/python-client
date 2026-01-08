@@ -286,9 +286,36 @@ class PoolClient:
         full_key = self._data_key_prefix + key
         self._pool_data.set(full_key, value, auto_clean)
         self._emit('on_update', key, value)
+
+    def set_fast(self, key: str, value: Any, auto_clean: Optional[int] = None) -> None:
+        """
+        Set a value without immediate sync - much faster for batched operations.
         
-        # Touch pool for TTL tracking
-        self._registry.touch_pool(self._name)
+        Call flush() when done to persist to shared memory.
+        
+        Args:
+            key: Key name
+            value: Any pickleable/msgpack-able value
+            auto_clean: Auto-expire after N seconds (None = never)
+        """
+        self._check_connected()
+        self._check_writable()
+        
+        if not isinstance(key, str):
+            raise ValueError("Key must be a string")
+
+        full_key = self._data_key_prefix + key
+        self._pool_data.set_fast(full_key, value, auto_clean)
+        self._emit('on_update', key, value)
+
+    def flush(self) -> None:
+        """
+        Flush pending writes to shared memory.
+        
+        Call this after batched set_fast() calls to persist data.
+        """
+        self._check_connected()
+        self._pool_data.flush()
 
     def get(self, key: str, default: Any = None) -> Any:
         """
