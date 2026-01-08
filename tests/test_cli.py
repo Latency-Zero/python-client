@@ -11,9 +11,10 @@ class TestCLI:
     
     def test_cli_help(self, capsys):
         """Test CLI help output."""
-        result = main(['--help'])
+        with pytest.raises(SystemExit) as exc_info:
+            main(['--help'])
         # argparse exits with 0 for help
-        # We can't easily test this without catching SystemExit
+        assert exc_info.value.code == 0
     
     def test_cli_list_empty(self, capsys):
         """Test listing pools when none exist."""

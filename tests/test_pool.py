@@ -308,13 +308,13 @@ class TestReadOnlyClient:
         # Setup with writable client
         writer = pool_manager.connect(unique_pool_name)
         writer.set("key", "value")
-        writer.disconnect()
         
-        # Read with readonly client
+        # Read with readonly client (while writer still connected to keep pool alive)
         reader = pool_manager.connect(unique_pool_name, readonly=True)
         assert reader.get("key") == "value"
         reader.disconnect()
         
+        writer.disconnect()
         pool_manager.destroy(unique_pool_name)
     
     def test_readonly_cannot_write(self, pool_manager, unique_pool_name):
