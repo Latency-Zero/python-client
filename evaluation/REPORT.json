@@ -1,0 +1,280 @@
+{
+  "generated_at": "2026-01-08T16:12:25.583885",
+  "config": {
+    "num_operations": 10000,
+    "payload_size": 100,
+    "threads": 1,
+    "methods": [
+      "latzero",
+      "HTTP",
+      "Socket"
+    ],
+    "operations": [
+      "set",
+      "get",
+      "mixed"
+    ],
+    "timestamp": "2026-01-08T16:10:48.186772"
+  },
+  "system_info": {
+    "platform": "Windows",
+    "platform_release": "11",
+    "platform_version": "10.0.26200",
+    "architecture": "AMD64",
+    "processor": "AMD64 Family 26 Model 36 Stepping 0, AuthenticAMD",
+    "python_version": "3.12.7",
+    "cpu_count_physical": 10,
+    "cpu_count_logical": 20,
+    "ram_total_gb": 23.12,
+    "ram_available_gb": 5.51
+  },
+  "results": {
+    "latzero": [
+      {
+        "name": "latzero",
+        "operation": "set",
+        "total_operations": 10000,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 52.8215875000169,
+        "throughput_ops_per_sec": 189.31653653909586,
+        "success_rate_percent": 100.0,
+        "latency_ms": {
+          "min": 0.42320002103224397,
+          "max": 52.78800000087358,
+          "avg": 5.273902440248639,
+          "p50": 4.934900003718212,
+          "p95": 7.822999992640689,
+          "p99": 10.46600000699982,
+          "stdev": 2.1932347466538613
+        },
+        "error_count": 0,
+        "sample_errors": []
+      },
+      {
+        "name": "latzero",
+        "operation": "get",
+        "total_operations": 10000,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 21.785484499996528,
+        "throughput_ops_per_sec": 459.0212349879845,
+        "success_rate_percent": 100.0,
+        "latency_ms": {
+          "min": 0.4563000111375004,
+          "max": 30.51500002038665,
+          "avg": 2.1731049200840062,
+          "p50": 1.6638000088278204,
+          "p95": 4.39590000314638,
+          "p99": 9.350999986054376,
+          "stdev": 1.896270690122663
+        },
+        "error_count": 0,
+        "sample_errors": []
+      },
+      {
+        "name": "latzero",
+        "operation": "mixed",
+        "total_operations": 10000,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 19.270898800023133,
+        "throughput_ops_per_sec": 518.9171560585434,
+        "success_rate_percent": 100.0,
+        "latency_ms": {
+          "min": 0.03619998460635543,
+          "max": 29.38289998564869,
+          "avg": 1.920997090174933,
+          "p50": 1.7370000132359564,
+          "p95": 3.552000009221956,
+          "p99": 4.960299993399531,
+          "stdev": 1.8367199126023233
+        },
+        "error_count": 0,
+        "sample_errors": []
+      }
+    ],
+    "HTTP": [
+      {
+        "name": "HTTP",
+        "operation": "set",
+        "total_operations": 10000,
+        "successful_operations": 0,
+        "failed_operations": 10000,
+        "total_time_seconds": 0.014976263046264648,
+        "throughput_ops_per_sec": 0.0,
+        "success_rate_percent": 0.0,
+        "latency_ms": {
+          "min": 0,
+          "max": 0,
+          "avg": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "error_count": 1,
+        "sample_errors": [
+          "cannot pickle 'module' object"
+        ]
+      },
+      {
+        "name": "HTTP",
+        "operation": "get",
+        "total_operations": 10000,
+        "successful_operations": 0,
+        "failed_operations": 10000,
+        "total_time_seconds": 0.010441303253173828,
+        "throughput_ops_per_sec": 0.0,
+        "success_rate_percent": 0.0,
+        "latency_ms": {
+          "min": 0,
+          "max": 0,
+          "avg": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "error_count": 1,
+        "sample_errors": [
+          "cannot pickle 'module' object"
+        ]
+      },
+      {
+        "name": "HTTP",
+        "operation": "mixed",
+        "total_operations": 10000,
+        "successful_operations": 0,
+        "failed_operations": 10000,
+        "total_time_seconds": 0.011321306228637695,
+        "throughput_ops_per_sec": 0.0,
+        "success_rate_percent": 0.0,
+        "latency_ms": {
+          "min": 0,
+          "max": 0,
+          "avg": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "error_count": 1,
+        "sample_errors": [
+          "cannot pickle 'module' object"
+        ]
+      }
+    ],
+    "Socket": [
+      {
+        "name": "Socket",
+        "operation": "set",
+        "total_operations": 10000,
+        "successful_operations": 10000,
+        "failed_operations": 0,
+        "total_time_seconds": 0.9959987000038382,
+        "throughput_ops_per_sec": 10040.173747176039,
+        "success_rate_percent": 100.0,
+        "latency_ms": {
+          "min": 0.06160000339150429,
+          "max": 2.5104999949689955,
+          "avg": 0.09711330004502088,
+          "p50": 0.08009999874047935,
+          "p95": 0.1832999987527728,
+          "p99": 0.32160000409930944,
+          "stdev": 0.05503105369709212
+        },
+        "error_count": 0,
+        "sample_errors": []
+      },
+      {
+        "name": "Socket",
+        "operation": "get",
+        "total_operations": 10000,
+        "successful_operations": 0,
+        "failed_operations": 10000,
+        "total_time_seconds": 0.00996088981628418,
+        "throughput_ops_per_sec": 0.0,
+        "success_rate_percent": 0.0,
+        "latency_ms": {
+          "min": 0,
+          "max": 0,
+          "avg": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "error_count": 1,
+        "sample_errors": [
+          "[WinError 10038] An operation was attempted on something that is not a socket"
+        ]
+      },
+      {
+        "name": "Socket",
+        "operation": "mixed",
+        "total_operations": 10000,
+        "successful_operations": 0,
+        "failed_operations": 10000,
+        "total_time_seconds": 0.00838923454284668,
+        "throughput_ops_per_sec": 0.0,
+        "success_rate_percent": 0.0,
+        "latency_ms": {
+          "min": 0,
+          "max": 0,
+          "avg": 0,
+          "p50": 0,
+          "p95": 0,
+          "p99": 0
+        },
+        "error_count": 1,
+        "sample_errors": [
+          "[WinError 10038] An operation was attempted on something that is not a socket"
+        ]
+      }
+    ]
+  },
+  "resource_stats": {
+    "latzero": {
+      "sample_count": 1814,
+      "duration_seconds": 19.26,
+      "cpu": {
+        "avg_percent": 100.07,
+        "min_percent": 0.0,
+        "max_percent": 169.8
+      },
+      "memory": {
+        "avg_mb": 50.01,
+        "min_mb": 42.73,
+        "max_mb": 50.8,
+        "avg_percent": 0.21
+      }
+    },
+    "HTTP": {
+      "sample_count": 3,
+      "duration_seconds": 0.0,
+      "cpu": {
+        "avg_percent": 0.0,
+        "min_percent": 0.0,
+        "max_percent": 0.0
+      },
+      "memory": {
+        "avg_mb": 50.27,
+        "min_mb": 50.21,
+        "max_mb": 50.3,
+        "avg_percent": 0.21
+      }
+    },
+    "Socket": {
+      "sample_count": 33,
+      "duration_seconds": 0.0,
+      "cpu": {
+        "avg_percent": 35.64,
+        "min_percent": 0.0,
+        "max_percent": 99.7
+      },
+      "memory": {
+        "avg_mb": 50.37,
+        "min_mb": 50.3,
+        "max_mb": 50.49,
+        "avg_percent": 0.21
+      }
+    }
+  }
+}
