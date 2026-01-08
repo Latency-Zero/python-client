@@ -76,7 +76,7 @@ class PoolRegistry:
             'clients': 0,
             'created': time.time()
         }
-        self._registry_data['pools_data_keys'][name] = f"latzero_pool_{name}"
+        self._registry_data['pools_data_keys'][name] = f"l0p_{name}"
         self._save_registry()
 
     def get_pool_info(self, name):
