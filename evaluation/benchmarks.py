@@ -1,5 +1,7 @@
 """
 Benchmark implementations for latzero, HTTP, and Socket communication.
+
+Windows-compatible version using threading instead of multiprocessing for servers.
 """
 
 import time
@@ -11,7 +13,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import multiprocessing as mp
 
 
 @dataclass
@@ -44,7 +45,7 @@ class BenchmarkResult:
     def latency_stats(self) -> Dict[str, float]:
         """Calculate latency statistics."""
         if not self.latencies_ms:
-            return {'min': 0, 'max': 0, 'avg': 0, 'p50': 0, 'p95': 0, 'p99': 0}
+            return {'min': 0, 'max': 0, 'avg': 0, 'p50': 0, 'p95': 0, 'p99': 0, 'stdev': 0}
         
         sorted_latencies = sorted(self.latencies_ms)
         n = len(sorted_latencies)
@@ -128,6 +129,12 @@ class BaseBenchmark(ABC):
         # Generate test data
         test_value = {"data": "x" * payload_size, "id": 0}
         
+        # Pre-populate for get operations
+        if operation == 'get':
+            for i in range(min(1000, num_operations)):
+                key = f"bench_key_{i}"
+                self.set_operation(key, {**test_value, "id": i})
+        
         def run_single_op(op_id: int) -> Tuple[float, bool, Optional[str]]:
             key = f"bench_key_{op_id % 1000}"  # Reuse keys
             value = {**test_value, "id": op_id}
@@ -138,9 +145,6 @@ class BaseBenchmark(ABC):
                 if operation == 'set':
                     success, error = self.set_operation(key, value)
                 elif operation == 'get':
-                    # First set, then get
-                    if op_id < 1000:
-                        self.set_operation(key, value)
                     _, success, error = self.get_operation(key)
                 else:  # mixed
                     if op_id % 2 == 0:
@@ -247,37 +251,35 @@ class LatzeroBenchmark(BaseBenchmark):
 
 
 class HTTPBenchmark(BaseBenchmark):
-    """Benchmark for HTTP communication using Flask."""
+    """Benchmark for HTTP communication using Flask (threaded server)."""
     
     def __init__(self, host: str = "127.0.0.1", port: int = 5999):
         super().__init__("HTTP")
         self.host = host
         self.port = port
-        self.server_process = None
+        self.server_thread = None
         self.data_store = {}
+        self._shutdown = False
     
     def setup(self) -> None:
-        import requests
-        self.requests = requests
+        self._shutdown = False
         
-        # Start Flask server in subprocess
-        self.server_process = mp.Process(target=self._run_server)
-        self.server_process.start()
+        # Start Flask server in thread
+        self.server_thread = threading.Thread(target=self._run_server, daemon=True)
+        self.server_thread.start()
         
         # Wait for server to start
-        time.sleep(1)
-        
-        # Verify server is up
-        for _ in range(10):
+        import requests
+        for _ in range(20):
             try:
                 resp = requests.get(f"http://{self.host}:{self.port}/health", timeout=1)
                 if resp.status_code == 200:
                     break
             except:
-                time.sleep(0.5)
+                time.sleep(0.2)
     
     def _run_server(self) -> None:
-        """Run Flask server in subprocess."""
+        """Run Flask server in thread."""
         from flask import Flask, request, jsonify
         import logging
         
@@ -303,16 +305,29 @@ class HTTPBenchmark(BaseBenchmark):
             value = data_store.get(key)
             return jsonify({"value": value, "found": value is not None})
         
-        app.run(host=self.host, port=self.port, threaded=True)
+        # Use werkzeug directly to avoid Flask dev server warnings
+        from werkzeug.serving import make_server
+        server = make_server(self.host, self.port, app, threaded=True)
+        server.timeout = 1
+        
+        while not self._shutdown:
+            server.handle_request()
     
     def teardown(self) -> None:
-        if self.server_process:
-            self.server_process.terminate()
-            self.server_process.join(timeout=5)
+        self._shutdown = True
+        # Send a dummy request to unblock the server
+        try:
+            import requests
+            requests.get(f"http://{self.host}:{self.port}/health", timeout=0.5)
+        except:
+            pass
+        if self.server_thread:
+            self.server_thread.join(timeout=2)
     
     def set_operation(self, key: str, value: Any) -> Tuple[bool, Optional[str]]:
         try:
-            resp = self.requests.post(
+            import requests
+            resp = requests.post(
                 f"http://{self.host}:{self.port}/set",
                 json={"key": key, "value": value},
                 timeout=5
@@ -323,7 +338,8 @@ class HTTPBenchmark(BaseBenchmark):
     
     def get_operation(self, key: str) -> Tuple[Any, bool, Optional[str]]:
         try:
-            resp = self.requests.get(
+            import requests
+            resp = requests.get(
                 f"http://{self.host}:{self.port}/get/{key}",
                 timeout=5
             )
@@ -336,22 +352,26 @@ class HTTPBenchmark(BaseBenchmark):
 
 
 class SocketBenchmark(BaseBenchmark):
-    """Benchmark for raw TCP socket communication."""
+    """Benchmark for raw TCP socket communication (threaded server)."""
     
     def __init__(self, host: str = "127.0.0.1", port: int = 5998):
         super().__init__("Socket")
         self.host = host
         self.port = port
-        self.server_process = None
+        self.server_thread = None
+        self.server_socket = None
         self.client_socket = None
+        self._shutdown = False
     
     def setup(self) -> None:
-        # Start socket server in subprocess
-        self.server_process = mp.Process(target=self._run_server)
-        self.server_process.start()
+        self._shutdown = False
+        
+        # Start socket server in thread
+        self.server_thread = threading.Thread(target=self._run_server, daemon=True)
+        self.server_thread.start()
         
         # Wait for server to start
-        time.sleep(0.5)
+        time.sleep(0.3)
         
         # Connect client
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -359,22 +379,24 @@ class SocketBenchmark(BaseBenchmark):
         self.client_socket.settimeout(5)
     
     def _run_server(self) -> None:
-        """Run socket server in subprocess."""
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((self.host, self.port))
-        server.listen(5)
+        """Run socket server in thread."""
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.settimeout(1)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
         
         data_store = {}
         
         def handle_client(conn):
             try:
-                while True:
-                    data = conn.recv(65536)
-                    if not data:
-                        break
-                    
+                while not self._shutdown:
                     try:
+                        conn.settimeout(1)
+                        data = conn.recv(65536)
+                        if not data:
+                            break
+                        
                         msg = json.loads(data.decode())
                         
                         if msg['op'] == 'set':
@@ -387,31 +409,45 @@ class SocketBenchmark(BaseBenchmark):
                             response = {"error": "Unknown operation"}
                         
                         conn.sendall(json.dumps(response).encode())
+                    except socket.timeout:
+                        continue
                     except Exception as e:
-                        conn.sendall(json.dumps({"error": str(e)}).encode())
+                        try:
+                            conn.sendall(json.dumps({"error": str(e)}).encode())
+                        except:
+                            break
             except:
                 pass
             finally:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
         
-        while True:
+        while not self._shutdown:
             try:
-                conn, addr = server.accept()
-                thread = threading.Thread(target=handle_client, args=(conn,))
-                thread.daemon = True
+                conn, addr = self.server_socket.accept()
+                thread = threading.Thread(target=handle_client, args=(conn,), daemon=True)
                 thread.start()
+            except socket.timeout:
+                continue
             except:
                 break
     
     def teardown(self) -> None:
+        self._shutdown = True
         if self.client_socket:
             try:
                 self.client_socket.close()
             except:
                 pass
-        if self.server_process:
-            self.server_process.terminate()
-            self.server_process.join(timeout=5)
+        if self.server_socket:
+            try:
+                self.server_socket.close()
+            except:
+                pass
+        if self.server_thread:
+            self.server_thread.join(timeout=2)
     
     def set_operation(self, key: str, value: Any) -> Tuple[bool, Optional[str]]:
         try:
