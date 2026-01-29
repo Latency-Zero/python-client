@@ -12,6 +12,9 @@ from .cleanup import (
     stop_cleanup_daemon,
     cleanup_orphaned_memory
 )
+from .events import EventEmitter, EventManager
+from .events_types import EventError, EventTimeout, EventMode
+from .events_metrics import EventMetrics, get_pool_event_health
 
 __all__ = [
     # Main API
@@ -38,4 +41,13 @@ __all__ = [
     'start_cleanup_daemon',
     'stop_cleanup_daemon',
     'cleanup_orphaned_memory',
+    
+    # Events
+    'EventEmitter',
+    'EventManager',
+    'EventError',
+    'EventTimeout',
+    'EventMode',
+    'EventMetrics',
+    'get_pool_event_health',
 ]

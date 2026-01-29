@@ -22,6 +22,11 @@ from .core.pool import SharedMemoryPool, PoolClient, NamespacedClient
 from .core.memory import configure_serializer, get_serializer
 from .core.cleanup import start_cleanup_daemon, stop_cleanup_daemon, cleanup_orphaned_memory
 
+# Events API
+from .core.events import EventEmitter
+from .core.events_types import EventError, EventTimeout, EventMode
+from .core.events_metrics import EventMetrics
+
 # Async API
 from .async_api import AsyncSharedMemoryPool, AsyncPoolClient
 
@@ -57,6 +62,13 @@ __all__ = [
     'start_cleanup_daemon',
     'stop_cleanup_daemon',
     'cleanup_orphaned_memory',
+    
+    # Events API
+    'EventEmitter',
+    'EventError',
+    'EventTimeout',
+    'EventMode',
+    'EventMetrics',
     
     # Async API
     'AsyncSharedMemoryPool',

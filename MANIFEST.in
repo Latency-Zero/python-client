@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include DOCS.md
+include latzero/py.typed
+recursive-include latzero *.py
+recursive-exclude tests *
+recursive-exclude evaluation *
+recursive-exclude .git *
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store

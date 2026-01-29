@@ -153,7 +153,7 @@ class PoolClient:
 
     __slots__ = (
         '_registry', '_name', '_data_key_prefix', '_encryption', '_auth_key',
-        '_pool_data', '_readonly', '_disconnected', '_event_handlers'
+        '_pool_data', '_readonly', '_disconnected', '_event_handlers', '_event_manager'
     )
 
     def __init__(
@@ -172,6 +172,7 @@ class PoolClient:
         self._readonly = readonly
         self._disconnected = False
         self._event_handlers: Dict[str, List[Callable]] = {}
+        self._event_manager = None  # Lazy init for events system
 
         # Get shared memory data access
         data_shm_name = registry.get_data_shm_name(name)
@@ -528,6 +529,93 @@ class PoolClient:
             'readonly': self._readonly,
             **memory_stats
         }
+
+    # =========== Namespace ===========
+
+    # =========== Socket-like Events API ===========
+
+    def on_event(self, event: str, **options):
+        """
+        Decorator to register an event handler.
+        
+        Usage:
+            @ipc.on_event("compute:multiply")
+            def multiply(x: int, y: int) -> int:
+                return x * y
+        
+        Args:
+            event: Event name
+            **options: Handler options (mode, request, response models)
+        """
+        from .events import EventEmitter
+        emitter = self.event_emitter()
+        return emitter.on(event, **options)
+
+    def emit_event(self, event: str, **data) -> None:
+        """
+        Fire-and-forget event emission.
+        
+        Args:
+            event: Event name
+            **data: Event payload data
+        """
+        from .events import EventEmitter
+        emitter = self.event_emitter()
+        emitter.emit(event, **data)
+
+    def call_event(self, event: str, _timeout: float = 5.0, **data):
+        """
+        RPC-style event call with response.
+        
+        Args:
+            event: Event name
+            _timeout: Timeout in seconds
+            **data: Event payload data
+            
+        Returns:
+            Handler response value
+        """
+        from .events import EventEmitter
+        emitter = self.event_emitter()
+        return emitter.call(event, _timeout=_timeout, **data)
+
+    def listen(self) -> None:
+        """
+        Start background event listener.
+        
+        This spawns a non-blocking background thread that waits for
+        incoming events using OS-native signaling (zero CPU polling).
+        """
+        from .events import EventEmitter
+        emitter = self.event_emitter()
+        emitter.listen()
+
+    def stop_events(self) -> None:
+        """Stop listening for events and cleanup."""
+        if self._event_manager:
+            self._event_manager.cleanup()
+            self._event_manager = None
+
+    def event_emitter(self, namespace: str = ""):
+        """
+        Create a namespaced event emitter.
+        
+        Usage:
+            user_events = ipc.event_emitter("user")
+            compute_events = ipc.event_emitter("compute")
+            
+            @user_events.on("login")
+            def on_login(username: str):
+                pass
+        
+        Args:
+            namespace: Optional namespace prefix for events
+            
+        Returns:
+            EventEmitter instance
+        """
+        from .events import EventEmitter
+        return EventEmitter(self, namespace=namespace)
 
     # =========== Namespace ===========
 

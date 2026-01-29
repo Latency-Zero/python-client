@@ -43,6 +43,9 @@ Any pickleable Python object can be stored. Use msgpack for 3-5x faster serializ
 **Event Hooks**  
 Hooks for client events: `on_connect`, `on_disconnect`, `on_update`, `on_delete`.
 
+**Socket-like Events API**  
+RPC-style `emit()` and `call()` for inter-process communication with OS-native signaling (~50μs latency).
+
 **Async Support**  
 Full async/await API with `AsyncSharedMemoryPool`.
 
@@ -109,12 +112,49 @@ with pool_manager.connect("myPool", auth_key="super_secret") as client:
     # Use set_fast() for batched writes (100x faster)
     for i in range(1000):
         client.set_fast(f"key_{i}", {"value": i})
-    
+
     # Flush to persist all writes
     client.flush()
-    
+
     # Reads are always instant
     print(client.get("key_0"))  # {'value': 0}
+```
+
+### Events API (Socket-like IPC)
+
+latzero provides a socket.io-style events API for RPC and fire-and-forget messaging:
+
+```python
+from latzero import SharedMemoryPool
+
+pm = SharedMemoryPool()
+pm.create("my_pool")
+
+with pm.connect("my_pool") as ipc:
+    # Register event handler
+    @ipc.on_event("compute:multiply")
+    def multiply(x: int, y: int) -> int:
+        return x * y
+
+    # Start background listener
+    ipc.listen()
+
+    # Fire-and-forget emit
+    ipc.emit_event("user:login", username="alice")
+
+    # RPC call with response (~50μs latency)
+    result = ipc.call_event("compute:multiply", x=7, y=6, _timeout=1.0)
+    print(result)  # 42
+
+    # Namespaced emitters
+    compute = ipc.event_emitter("compute")
+
+    @compute.on("add")
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    compute.listen()
+    result = compute.call("add", a=10, b=5)  # 15
 ```
 
 ## System Architecture
@@ -142,7 +182,7 @@ Monitors idle pools and clears them when unused.
 ## Security Model
 
 | Concern             | Mechanism                                                             |
-|---------------------|-----------------------------------------------------------------------|
+| ------------------- | --------------------------------------------------------------------- |
 | Unauthorized access | Password-based authentication                                         |
 | Data leakage        | AES-256 encryption when `encryption=True`                             |
 | Data tampering      | Integrity checked using HMAC                                          |
@@ -150,20 +190,20 @@ Monitors idle pools and clears them when unused.
 
 ## Performance
 
-| Operation | Throughput | Latency |
-|-----------|------------|--------|
-| `set_fast()` (batched) | **77,000+ ops/sec** | ~0.01ms |
-| `get()` | **287,000+ ops/sec** | ~0.003ms |
-| `set()` (immediate sync) | 600 ops/sec | ~1.6ms |
-| Mixed workload | **146,000+ ops/sec** | ~0.007ms |
+| Operation                | Throughput           | Latency  |
+| ------------------------ | -------------------- | -------- |
+| `set_fast()` (batched)   | **77,000+ ops/sec**  | ~0.01ms  |
+| `get()`                  | **287,000+ ops/sec** | ~0.003ms |
+| `set()` (immediate sync) | 600 ops/sec          | ~1.6ms   |
+| Mixed workload           | **146,000+ ops/sec** | ~0.007ms |
 
 ### vs Other Methods
 
-| Method | Throughput | Speedup |
-|--------|------------|----------|
-| **latzero** | **170,000 ops/sec** | — |
-| Raw Socket | 5,277 ops/sec | 32x faster |
-| HTTP (Flask) | 133 ops/sec | 1,280x faster |
+| Method       | Throughput          | Speedup       |
+| ------------ | ------------------- | ------------- |
+| **latzero**  | **170,000 ops/sec** | —             |
+| Raw Socket   | 5,277 ops/sec       | 32x faster    |
+| HTTP (Flask) | 133 ops/sec         | 1,280x faster |
 
 ## Examples
 
@@ -172,6 +212,7 @@ Check the `examples/` directory for usage demos:
 - `simple_pool.py` - Basic pool operations
 - `encrypted_pool.py` - Secure pool with encryption
 - `multi_client_demo.py` - Concurrent multi-client access
+- `events_demo.py` - Socket-like events API demo
 
 ## Dependencies
 
