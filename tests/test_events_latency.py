@@ -50,13 +50,26 @@ def format_rate(ops_per_sec: float) -> str:
         return f"{ops_per_sec:.1f} ops/sec"
 
 
+# ============== Pool Manager ==============
+
+# Global pool manager - reuse across tests to avoid resource leaks
+_pool_manager = None
+
+def get_pool_manager():
+    """Get shared pool manager instance."""
+    global _pool_manager
+    if _pool_manager is None:
+        _pool_manager = SharedMemoryPool()
+    return _pool_manager
+
+
 # ============== Single Process Tests ==============
 
 def test_emit_latency():
     """Test fire-and-forget emit latency (no response)."""
     print_header("EMIT Latency Test (Fire-and-Forget)")
     
-    pm = SharedMemoryPool()
+    pm = get_pool_manager()
     pm.create(POOL_NAME)
     
     try:
@@ -109,7 +122,7 @@ def test_call_latency():
     """Test RPC call round-trip latency."""
     print_header("CALL Latency Test (RPC Round-trip)")
     
-    pm = SharedMemoryPool()
+    pm = get_pool_manager()
     pm.create(POOL_NAME)
     
     try:
@@ -167,7 +180,7 @@ def test_emit_throughput():
     """Test emit throughput (ops/second)."""
     print_header("EMIT Throughput Test")
     
-    pm = SharedMemoryPool()
+    pm = get_pool_manager()
     pm.create(POOL_NAME)
     
     try:
@@ -207,7 +220,7 @@ def test_baseline_set_get():
     """Test baseline set/get performance for comparison."""
     print_header("BASELINE: set/get Performance")
     
-    pm = SharedMemoryPool()
+    pm = get_pool_manager()
     pm.create(POOL_NAME)
     
     try:
@@ -238,6 +251,7 @@ def test_baseline_set_get():
 
 # ============== Main ==============
 
+
 def main():
     print("\n" + "=" * 60)
     print("       latzero Events System Benchmark")
@@ -247,19 +261,26 @@ def main():
     print(f"    Latency iterations:    {LATENCY_ITERATIONS:,}")
     print(f"    Throughput iterations: {THROUGHPUT_ITERATIONS:,}")
     
-    # Run baseline first
-    test_baseline_set_get()
-    
-    # Run emit tests
-    test_emit_latency()
-    test_emit_throughput()
-    
-    # Run call tests
-    test_call_latency()
-    
-    print("\n" + "=" * 60)
-    print("  Benchmark Complete!")
-    print("=" * 60 + "\n")
+    try:
+        # Run baseline first
+        test_baseline_set_get()
+        
+        # Run emit tests
+        test_emit_latency()
+        test_emit_throughput()
+        
+        # Run call tests
+        test_call_latency()
+        
+        print("\n" + "=" * 60)
+        print("  Benchmark Complete!")
+        print("=" * 60 + "\n")
+    finally:
+        # Cleanup pool manager to prevent resource leak warnings
+        global _pool_manager
+        if _pool_manager is not None:
+            _pool_manager.close(force=True)
+            _pool_manager = None
 
 
 if __name__ == "__main__":
