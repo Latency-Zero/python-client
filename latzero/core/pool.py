@@ -221,15 +221,22 @@ class PoolClient:
 
     def _cleanup(self) -> None:
         """Internal cleanup."""
+        should_destroy = False
         try:
             clients = self._registry.dec_clients(self._name)
             if clients <= 0:
+                should_destroy = True
                 self._registry.remove_pool(self._name)
         except Exception:
             pass
         
         try:
-            self._pool_data.close()
+            if should_destroy:
+                # Last client - destroy (unlink) the shared memory
+                self._pool_data.destroy()
+            else:
+                # Other clients still connected - just close our handle
+                self._pool_data.close()
         except Exception:
             pass
 

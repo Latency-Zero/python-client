@@ -310,15 +310,17 @@ class PoolRegistry:
         """Cleanup registry shared memory if we're the creator and no pools remain."""
         try:
             if hasattr(self, 'shm') and self.shm is not None:
-                self.shm.close()
                 # Only unlink if we're creator AND no pools exist
                 if getattr(self, 'is_creator', False):
                     try:
                         with self._lock:
                             data = self._read_registry_data_unsafe()
                             if not data['pools']:
+                                # IMPORTANT: unlink BEFORE close, otherwise it fails
                                 self.shm.unlink()
                     except Exception:
                         pass
+                # Always close our handle
+                self.shm.close()
         except Exception:
             pass
