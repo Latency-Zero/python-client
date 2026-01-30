@@ -141,6 +141,18 @@ class SharedMemoryPool:
         registry = self._get_registry()
         return registry.get_stats()
 
+    def close(self, force: bool = False) -> None:
+        """
+        Close the pool manager and optionally cleanup the registry.
+        
+        Args:
+            force: If True, force unlink the registry even if other pools may exist.
+                  Use this when you know you're completely done with all latzero pools.
+        """
+        if self._registry is not None:
+            self._registry.close(force_unlink=force)
+            self._registry = None
+
 
 class PoolClient:
     """

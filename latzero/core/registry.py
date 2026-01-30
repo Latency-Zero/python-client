@@ -306,21 +306,38 @@ class PoolRegistry:
         
         return self._atomic_update(update)
 
-    def __del__(self):
-        """Cleanup registry shared memory if we're the creator and no pools remain."""
+    def close(self, force_unlink: bool = False) -> None:
+        """
+        Explicitly close the registry.
+        
+        Args:
+            force_unlink: If True, unlink even if we're not the creator and pools exist.
+                         Use this in tests or when you know you're done with all pools.
+        """
         try:
             if hasattr(self, 'shm') and self.shm is not None:
-                # Only unlink if we're creator AND no pools exist
-                if getattr(self, 'is_creator', False):
+                should_unlink = force_unlink
+                
+                if not force_unlink and getattr(self, 'is_creator', False):
                     try:
                         with self._lock:
                             data = self._read_registry_data_unsafe()
                             if not data['pools']:
-                                # IMPORTANT: unlink BEFORE close, otherwise it fails
-                                self.shm.unlink()
+                                should_unlink = True
                     except Exception:
                         pass
-                # Always close our handle
+                
+                if should_unlink:
+                    try:
+                        self.shm.unlink()
+                    except Exception:
+                        pass
+                
                 self.shm.close()
+                self.shm = None
         except Exception:
             pass
+
+    def __del__(self):
+        """Cleanup registry shared memory if we're the creator and no pools remain."""
+        self.close(force_unlink=False)
