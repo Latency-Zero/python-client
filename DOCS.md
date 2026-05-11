@@ -105,6 +105,28 @@ with pool.connect("myPool") as client:
 # Pool auto-cleans when all clients disconnect
 ```
 
+### Server Mode
+
+Use `LatZero` when you want applications to communicate through the local
+`latzero-server` daemon instead of direct standalone shared memory:
+
+```python
+from latzero import LatZero
+
+client = LatZero("latzero://client-1", pool="alpha")
+client.set("profile", {"name": "Alice"}, persistent=True)
+client.subscribe_buffer("profile")
+```
+
+Server mode characteristics:
+
+- transport: newline-delimited JSON over TCP
+- default endpoint: `127.0.0.1:14130`
+- one connected pool per client instance
+- explicit `switch_pool(...)` support
+- targeted app calls via `call_app(...)`
+- JSON-serializable values only in v1
+
 ### Cross-Process Communication
 
 **Process 1 (Producer):**

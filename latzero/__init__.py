@@ -21,6 +21,7 @@ __author__ = 'BRAHMAI'
 from .core.pool import SharedMemoryPool, PoolClient, NamespacedClient
 from .core.memory import configure_serializer, get_serializer
 from .core.cleanup import start_cleanup_daemon, stop_cleanup_daemon, cleanup_orphaned_memory
+from .server_client import LatZero, ServerNamespacedClient
 
 # Events API
 from .core.events import EventEmitter
@@ -28,7 +29,7 @@ from .core.events_types import EventError, EventTimeout, EventMode
 from .core.events_metrics import EventMetrics
 
 # Async API
-from .async_api import AsyncSharedMemoryPool, AsyncPoolClient
+from .async_api import AsyncSharedMemoryPool, AsyncPoolClient, AsyncLatZero
 
 # Persistence
 from .persistence import PoolSnapshot, save_pool_snapshot, load_pool_snapshot
@@ -44,6 +45,9 @@ from .utils.exceptions import (
     MemoryFullError,
     ReadOnlyError,
     PoolDisconnectedError,
+    ServerConnectionError,
+    ServerProtocolError,
+    ServerTimeoutError,
 )
 
 __all__ = [
@@ -53,8 +57,10 @@ __all__ = [
     
     # Core API
     'SharedMemoryPool',
+    'LatZero',
     'PoolClient',
     'NamespacedClient',
+    'ServerNamespacedClient',
     'configure_serializer',
     'get_serializer',
     
@@ -73,6 +79,7 @@ __all__ = [
     # Async API
     'AsyncSharedMemoryPool',
     'AsyncPoolClient',
+    'AsyncLatZero',
     
     # Persistence
     'PoolSnapshot',
@@ -92,4 +99,7 @@ __all__ = [
     'MemoryFullError',
     'ReadOnlyError',
     'PoolDisconnectedError',
+    'ServerConnectionError',
+    'ServerProtocolError',
+    'ServerTimeoutError',
 ]

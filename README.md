@@ -58,6 +58,31 @@ Manage pools from command line: `latzero list`, `latzero inspect`, etc.
 pip install latzero
 ```
 
+## Server Mode
+
+LatZero can still run in standalone shared-memory mode, but it can now also
+connect to a local TCP server.
+
+Start the server separately:
+
+```bash
+latzero-server
+```
+
+Then connect from Python:
+
+```python
+from latzero import LatZero
+
+client = LatZero("latzero://client-1", pool="alpha")
+client.set("user", {"name": "Alice"}, persistent=True)
+print(client.get("user"))
+```
+
+Server mode uses JSON-over-TCP on `127.0.0.1:14130` by default, supports named
+open or auth-guarded pools, explicit buffer subscriptions, targeted app calls,
+and optional persistent buffers. Server mode values must be JSON-serializable.
+
 ## Quick Start
 
 ### Creating a Pool

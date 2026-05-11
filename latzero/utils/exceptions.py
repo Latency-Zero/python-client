@@ -56,3 +56,18 @@ class OrphanedMemoryError(LatzeroError):
 class PoolDisconnectedError(LatzeroError):
     """Raised when operations are attempted on a disconnected pool client."""
     pass
+
+
+class ServerConnectionError(LatzeroError):
+    """Raised when the LatZero client cannot connect to the local server."""
+    pass
+
+
+class ServerProtocolError(LatzeroError):
+    """Raised when the local server returns an invalid or unexpected message."""
+    pass
+
+
+class ServerTimeoutError(LatzeroError):
+    """Raised when a server request or routed app call times out."""
+    pass

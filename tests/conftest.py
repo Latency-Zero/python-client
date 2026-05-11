@@ -2,9 +2,14 @@
 pytest fixtures for latzero tests.
 """
 
-import pytest
+import asyncio
+import socket
+import sys
+import threading
 import uuid
-import time
+from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -90,3 +95,59 @@ def cleanup_test_pools():
                 pool.destroy(name)
             except Exception:
                 pass
+
+
+def _free_port():
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+@pytest.fixture(scope="session")
+def latzero_server():
+    """Run a local latzero-server instance for integration tests."""
+    server_root = Path(__file__).resolve().parents[2] / "latzero-server"
+    if str(server_root) not in sys.path:
+        sys.path.insert(0, str(server_root))
+
+    from latzero_server import LatZeroServer, ServerConfig
+
+    port = _free_port()
+    data_dir = Path(__file__).resolve().parents[1] / "_server_test_state"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    config = ServerConfig(host="127.0.0.1", port=port, data_dir=data_dir)
+    server = LatZeroServer(config=config)
+    loop = asyncio.new_event_loop()
+    ready = threading.Event()
+
+    async def runner():
+        await server.start()
+        ready.set()
+        while True:
+            await asyncio.sleep(3600)
+
+    def run():
+        asyncio.set_event_loop(loop)
+        task = loop.create_task(runner())
+        try:
+            loop.run_forever()
+        finally:
+            task.cancel()
+            loop.run_until_complete(server.stop())
+            loop.run_until_complete(asyncio.sleep(0))
+            loop.close()
+
+    thread = threading.Thread(target=run, daemon=True, name="latzero-server-test")
+    thread.start()
+    ready.wait(timeout=5)
+
+    yield {
+        "host": config.host,
+        "port": config.port,
+        "data_dir": data_dir,
+    }
+
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)

@@ -40,4 +40,7 @@ Thumbs.db
 *.bak
 *.tmp
 
-**/__pycache__/*
+**/__pycache__/
+**/*.pyc.*
+conda_env/
+*.cpython-*

@@ -14,6 +14,9 @@ from .exceptions import (
     LockTimeoutError,
     OrphanedMemoryError,
     PoolDisconnectedError,
+    ServerConnectionError,
+    ServerProtocolError,
+    ServerTimeoutError,
 )
 from .type_checker import is_pickleable, preserve_type
 from .logging import get_logger, configure_logging, log_operation
@@ -31,6 +34,9 @@ __all__ = [
     'LockTimeoutError',
     'OrphanedMemoryError',
     'PoolDisconnectedError',
+    'ServerConnectionError',
+    'ServerProtocolError',
+    'ServerTimeoutError',
     
     # Type checking
     'is_pickleable',
