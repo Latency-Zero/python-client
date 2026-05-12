@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from .process_proxy import ProcessProxy
 from .utils.exceptions import (
     AuthenticationError,
     PoolDisconnectedError,
@@ -53,6 +54,8 @@ class LatZero:
         "_dispatch_enabled",
         "_hooks",
         "_event_handlers",
+        "_processes",
+        "process",
     )
 
     def __init__(
@@ -83,6 +86,8 @@ class LatZero:
         self._dispatch_enabled = True
         self._hooks: Dict[str, List[Callable]] = {}
         self._event_handlers: Dict[str, List[Callable]] = {}
+        self._processes: Dict[str, Callable] = {}
+        self.process = ProcessProxy(self)
 
         self._connect(timeout=timeout)
         self._emit("on_connect", self._pool_name)
