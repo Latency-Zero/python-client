@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="latzero",
-    version="0.3.0",
+    version="0.4.0",
     author="BRAHMAI",
     author_email="hello@brahmai.in",
     description="Zero-latency, zero-fuss shared memory for Python — dynamic, encrypted, and insanely fast.",
