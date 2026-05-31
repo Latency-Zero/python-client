@@ -57,7 +57,15 @@ class ProcessProxy:
     # register
     # ------------------------------------------------------------------
 
-    def register(self, fn: Optional[Callable] = None, *, name: Optional[str] = None):
+    def register(
+        self,
+        fn: Optional[Callable] = None,
+        *,
+        name: Optional[str] = None,
+        scale: bool = False,
+        max_replicas: int = 10,
+        group_id: Optional[str] = None,
+    ):
         """
         Register a callable as a named process.
 
@@ -65,24 +73,31 @@ class ProcessProxy:
 
             client.process.register(fn)
             client.process.register(fn, name="override")
+            client.process.register(fn, scale=True, max_replicas=5)
+            client.process.register(fn, scale=True, group_id="...")
             @client.process.register
             @client.process.register(name="override")
         """
-        # @client.process.register(name="override")  →  fn is None, return decorator
         if fn is None:
             def decorator(f: Callable) -> Callable:
-                self._do_register(f, name or f.__name__)
+                self._do_register(f, name or f.__name__, scale=scale, max_replicas=max_replicas, group_id=group_id)
                 return f
             return decorator
 
-        # client.process.register(fn)  or  @client.process.register  (bare)
         if callable(fn):
-            self._do_register(fn, name or fn.__name__)
+            self._do_register(fn, name or fn.__name__, scale=scale, max_replicas=max_replicas, group_id=group_id)
             return fn
 
         raise TypeError("register() expects a callable as the first argument")
 
-    def _do_register(self, fn: Callable, process_name: str) -> None:
+    def _do_register(
+        self,
+        fn: Callable,
+        process_name: str,
+        scale: bool = False,
+        max_replicas: int = 10,
+        group_id: Optional[str] = None,
+    ) -> None:
         if not process_name:
             raise ValueError(
                 "Cannot infer process name from an anonymous/lambda function. "
@@ -112,7 +127,13 @@ class ProcessProxy:
         compound_key = f"{client._client_id}:{process_name}"
         client._event_handlers[compound_key] = [wrapped]
 
-        client._request("register_process", payload={"process_name": process_name})
+        payload: dict = {"process_name": process_name}
+        if scale:
+            payload["scale"] = True
+            payload["max_replicas"] = max_replicas
+        if group_id:
+            payload["group_id"] = group_id
+        client._request("register_process", payload=payload)
 
     # ------------------------------------------------------------------
     # unregister

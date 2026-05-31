@@ -55,6 +55,7 @@ class LatZero:
         "_hooks",
         "_event_handlers",
         "_processes",
+        "_replica_manager",
         "process",
     )
 
@@ -87,6 +88,7 @@ class LatZero:
         self._hooks: Dict[str, List[Callable]] = {}
         self._event_handlers: Dict[str, List[Callable]] = {}
         self._processes: Dict[str, Callable] = {}
+        self._replica_manager: Optional["ReplicaManager"] = None
         self.process = ProcessProxy(self)
 
         self._connect(timeout=timeout)
@@ -231,19 +233,21 @@ class LatZero:
                 try:
                     raw = self._reader.readline()
                 except (socket.timeout, TimeoutError):
-                    # Socket timeout — just retry; request timeouts are
-                    # managed by _wait_for_message via queue.get().
                     continue
+                except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                    break
                 if not raw:
                     break
-                message = json.loads(raw.decode("utf-8"))
+                message = json.loads(raw.decode("utf-8").strip())
                 request_id = message.get("request_id")
-                if request_id and request_id in self._pending and message.get("type") in {"ack", "error", "app_result"}:
+                mtype = message.get("type")
+                if request_id and request_id in self._pending and mtype in {"ack", "error", "app_result"}:
                     self._pending[request_id].put(message)
                 else:
                     self._dispatch_message(message)
-        except Exception:
-            pass
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
         finally:
             self._running = False
             for pending in list(self._pending.values()):
@@ -289,6 +293,30 @@ class LatZero:
 
         if msg_type == "app_result":
             self._emit("on_app_result", payload)
+            return
+
+        if msg_type == "process_scale":
+            action = payload.get("action")
+            process_name = payload.get("process_name")
+            count = payload.get("count", 1)
+            group_id = payload.get("group_id")
+            if self._replica_manager is None:
+                self._replica_manager = ReplicaManager(self)
+            if action == "up":
+                for _ in range(count):
+                    self._replica_manager.create_replica(
+                        process_name=process_name,
+                        group_id=group_id,
+                        host=self._host,
+                        port=self._port,
+                        pool=self._pool_name,
+                        auth_token=self._auth_token,
+                    )
+            elif action == "down":
+                replica_id = payload.get("replica_id")
+                if replica_id:
+                    self._replica_manager.destroy_replica(replica_id)
+            return
 
     def _handle_incoming_app_call(self, message: dict, payload: dict) -> None:
         event = payload.get("event", "")
@@ -368,6 +396,14 @@ class LatZero:
         finally:
             self._running = False
             self._disconnected = True
+            if self._replica_manager is not None:
+                self._replica_manager.destroy_all()
+            # Shutdown first so receiver thread's readline() unblocks on Windows
+            try:
+                if self._sock is not None:
+                    self._sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
             try:
                 if self._reader is not None:
                     self._reader.close()
@@ -651,3 +687,96 @@ class ServerEventEmitter:
             _timeout=_timeout,
             **data,
         )
+
+
+# ---------------------------------------------------------------------------
+# ReplicaManager — auto-scaling child connections
+# ---------------------------------------------------------------------------
+
+
+class ReplicaManager:
+    """
+    Manages child ``LatZero`` connections created in response to server
+    ``process_scale`` commands.
+
+    Each replica is an independent TCP client that registers the same
+    process function under a derived ``client_id``.
+    """
+
+    __slots__ = ("_client", "_replicas", "_lock", "_seq")
+
+    def __init__(self, client: "LatZero") -> None:
+        self._client = client
+        self._replicas: Dict[str, "LatZero"] = {}
+        self._lock = threading.Lock()
+        self._seq = 0
+
+    def create_replica(
+        self,
+        process_name: str,
+        group_id: str,
+        host: str,
+        port: int,
+        pool: str,
+        auth_token: Optional[str] = None,
+    ) -> None:
+        """Spawn a new replica in a background thread."""
+        parent = self._client
+        with self._lock:
+            self._seq += 1
+            seq = self._seq
+            replica_id = (
+                f"{parent._client_id}:{process_name}:replica:{seq}"
+            )
+
+        fn = parent._processes.get(process_name)
+
+        def _spawn() -> None:
+            try:
+                replica = LatZero(
+                    dsn=f"latzero://{replica_id}",
+                    pool=pool,
+                    auth_token=auth_token,
+                    host=host,
+                    port=port,
+                )
+                if fn is not None:
+                    replica.process.register(
+                        fn,
+                        name=process_name,
+                        scale=False,
+                        group_id=group_id,
+                    )
+                with self._lock:
+                    self._replicas[replica_id] = replica
+            except Exception as exc:
+                import sys
+                print(
+                    f"[ReplicaManager] failed to spawn replica "
+                    f"{replica_id}: {exc}",
+                    file=sys.stderr,
+                )
+
+        t = threading.Thread(target=_spawn, daemon=True)
+        t.start()
+
+    def destroy_replica(self, replica_id: str) -> None:
+        """Disconnect and remove a specific replica."""
+        with self._lock:
+            replica = self._replicas.pop(replica_id, None)
+        if replica is not None:
+            try:
+                replica.disconnect()
+            except Exception:
+                pass
+
+    def destroy_all(self) -> None:
+        """Disconnect every replica (called during parent disconnect)."""
+        with self._lock:
+            replicas = dict(self._replicas)
+            self._replicas.clear()
+        for rid, rep in replicas.items():
+            try:
+                rep.disconnect()
+            except Exception:
+                pass
