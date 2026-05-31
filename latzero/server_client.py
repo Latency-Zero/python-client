@@ -12,6 +12,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from .process_proxy import ProcessProxy
+from .worker import (
+    IncomingWorkerPool,
+    WorkerKind,
+    _default_send_result,
+)
 from .utils.exceptions import (
     AuthenticationError,
     PoolDisconnectedError,
@@ -56,6 +61,7 @@ class LatZero:
         "_event_handlers",
         "_processes",
         "_replica_manager",
+        "_metrics_push_thread",
         "process",
     )
 
@@ -89,6 +95,7 @@ class LatZero:
         self._event_handlers: Dict[str, List[Callable]] = {}
         self._processes: Dict[str, Callable] = {}
         self._replica_manager: Optional["ReplicaManager"] = None
+        self._metrics_push_thread: Optional[threading.Thread] = None
         self.process = ProcessProxy(self)
 
         self._connect(timeout=timeout)
@@ -117,6 +124,43 @@ class LatZero:
         # Clear socket timeout so the receiver loop can block indefinitely.
         # Request-level timeouts are handled by _wait_for_message via queue.get().
         self._sock.settimeout(None)
+
+    def _start_metrics_push(self) -> None:
+        """Start a background thread that periodically sends worker metrics
+        to the server and runs local auto-scaling checks."""
+        if self._metrics_push_thread is not None and self._metrics_push_thread.is_alive():
+            return
+        self._metrics_push_thread = threading.Thread(
+            target=self._metrics_push_loop,
+            daemon=True,
+            name=f"latzero-metrics-push-{self._client_id}",
+        )
+        self._metrics_push_thread.start()
+
+    def _metrics_push_loop(self) -> None:
+        """
+        Every ~1 second:
+          1. Run local auto-scaling on each worker pool.
+          2. Push aggregate metrics to the server (``worker_metrics``).
+        """
+        while self._running and not self._disconnected:
+            time.sleep(1.0)
+            try:
+                # Local auto-scaling
+                if self._replica_manager is not None:
+                    self._replica_manager.check_local_autoscale()
+                    metrics = self._replica_manager.get_all_metrics()
+                    if metrics:
+                        try:
+                            self._request(
+                                "worker_metrics",
+                                payload={"metrics": metrics},
+                                timeout=2.0,
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     def _join_pool(self, pool: str, auth_token: Optional[str], timeout: float = 5.0) -> None:
         self._request(
@@ -241,8 +285,9 @@ class LatZero:
                 message = json.loads(raw.decode("utf-8").strip())
                 request_id = message.get("request_id")
                 mtype = message.get("type")
-                if request_id and request_id in self._pending and mtype in {"ack", "error", "app_result"}:
-                    self._pending[request_id].put(message)
+                pending_queue = self._pending.get(request_id) if request_id else None
+                if pending_queue is not None and mtype in {"ack", "error", "app_result"}:
+                    pending_queue.put(message)
                 else:
                     self._dispatch_message(message)
         except Exception as exc:
@@ -299,30 +344,31 @@ class LatZero:
             action = payload.get("action")
             process_name = payload.get("process_name")
             count = payload.get("count", 1)
-            group_id = payload.get("group_id")
             if self._replica_manager is None:
                 self._replica_manager = ReplicaManager(self)
             if action == "up":
-                for _ in range(count):
-                    self._replica_manager.create_replica(
-                        process_name=process_name,
-                        group_id=group_id,
-                        host=self._host,
-                        port=self._port,
-                        pool=self._pool_name,
-                        auth_token=self._auth_token,
-                    )
+                self._replica_manager.scale_up(process_name, count)
             elif action == "down":
-                replica_id = payload.get("replica_id")
-                if replica_id:
-                    self._replica_manager.destroy_replica(replica_id)
+                self._replica_manager.scale_down(process_name, count)
             return
 
     def _handle_incoming_app_call(self, message: dict, payload: dict) -> None:
+        """Route an incoming ``call_app`` to the appropriate worker pool."""
         event = payload.get("event", "")
         request_id = message.get("request_id")
+        caller_client_id = message.get("client_id", "")
+        data = payload.get("data", {})
+
+        # Check if we have a worker pool for this event (compound key like "client-1:add")
+        if self._replica_manager is not None:
+            pool = self._replica_manager.get_pool(event)
+            if pool is not None:
+                pool.submit(request_id, caller_client_id, data)
+                return
+
+        # Fall back to non-scalable event handler (existing behavior)
         try:
-            result = self._invoke_event_handlers(event, payload.get("data", {}), expect_result=True)
+            result = self._invoke_event_handlers(event, data, expect_result=True)
             response_payload = {"value": result, "error": None}
         except Exception as exc:
             response_payload = {
@@ -398,6 +444,7 @@ class LatZero:
             self._disconnected = True
             if self._replica_manager is not None:
                 self._replica_manager.destroy_all()
+            self._metrics_push_thread = None
             # Shutdown first so receiver thread's readline() unblocks on Windows
             try:
                 if self._sock is not None:
@@ -690,93 +737,107 @@ class ServerEventEmitter:
 
 
 # ---------------------------------------------------------------------------
-# ReplicaManager — auto-scaling child connections
+# ReplicaManager — local worker pools
 # ---------------------------------------------------------------------------
 
 
 class ReplicaManager:
     """
-    Manages child ``LatZero`` connections created in response to server
-    ``process_scale`` commands.
+    Manages local ``IncomingWorkerPool`` instances for scalable registered
+    processes.  Workers are threads or OS processes inside the current
+    client — no separate TCP connections.
 
-    Each replica is an independent TCP client that registers the same
-    process function under a derived ``client_id``.
+    The server sends ``process_scale`` commands; this class translates
+    them into ``IncomingWorkerPool.scale_up() / scale_down()`` calls.
+
+    Pool lookups use the compound key ``"client_id:process_name"``
+    (e.g. ``"worker-1:add"``) so that incoming ``call_app`` messages
+    can be routed to the correct local worker pool.
     """
 
-    __slots__ = ("_client", "_replicas", "_lock", "_seq")
+    __slots__ = ("_client", "_pools", "_lock")
 
     def __init__(self, client: "LatZero") -> None:
         self._client = client
-        self._replicas: Dict[str, "LatZero"] = {}
+        self._pools: Dict[str, "IncomingWorkerPool"] = {}
         self._lock = threading.Lock()
-        self._seq = 0
 
-    def create_replica(
-        self,
-        process_name: str,
-        group_id: str,
-        host: str,
-        port: int,
-        pool: str,
-        auth_token: Optional[str] = None,
-    ) -> None:
-        """Spawn a new replica in a background thread."""
-        parent = self._client
+    def setup_pool(self, process_name: str, fn: Callable,
+                   worker_kind: WorkerKind = WorkerKind.THREAD,
+                   min_workers: int = 1,
+                   max_workers: int = 10) -> None:
+        """
+        Create an ``IncomingWorkerPool`` for the given process name and
+        register it so incoming ``call_app`` messages are routed here.
+        """
+        compound_key = f"{self._client._client_id}:{process_name}"
         with self._lock:
-            self._seq += 1
-            seq = self._seq
-            replica_id = (
-                f"{parent._client_id}:{process_name}:replica:{seq}"
-            )
+            if compound_key in self._pools:
+                return  # already set up
 
-        fn = parent._processes.get(process_name)
-
-        def _spawn() -> None:
-            try:
-                replica = LatZero(
-                    dsn=f"latzero://{replica_id}",
-                    pool=pool,
-                    auth_token=auth_token,
-                    host=host,
-                    port=port,
-                )
-                if fn is not None:
-                    replica.process.register(
-                        fn,
-                        name=process_name,
-                        scale=False,
-                        group_id=group_id,
-                    )
-                with self._lock:
-                    self._replicas[replica_id] = replica
-            except Exception as exc:
-                import sys
-                print(
-                    f"[ReplicaManager] failed to spawn replica "
-                    f"{replica_id}: {exc}",
-                    file=sys.stderr,
-                )
-
-        t = threading.Thread(target=_spawn, daemon=True)
-        t.start()
-
-    def destroy_replica(self, replica_id: str) -> None:
-        """Disconnect and remove a specific replica."""
+        pool = IncomingWorkerPool(
+            client=self._client,
+            fn=fn,
+            process_name=compound_key,
+            pool_name=self._client._pool_name,
+            worker_kind=worker_kind,
+            min_workers=min_workers,
+            max_workers=max_workers,
+        )
         with self._lock:
-            replica = self._replicas.pop(replica_id, None)
-        if replica is not None:
+            self._pools[compound_key] = pool
+
+    def get_pool(self, compound_key: str) -> Optional["IncomingWorkerPool"]:
+        """Look up a pool by its compound key (``client_id:process_name``)."""
+        return self._pools.get(compound_key)
+
+    def scale_up(self, process_name: str, count: int = 1) -> None:
+        """Add workers to the pool for the given short process name."""
+        compound_key = f"{self._client._client_id}:{process_name}"
+        with self._lock:
+            pool = self._pools.get(compound_key)
+        if pool is not None:
+            pool.scale_up(count)
+
+    def scale_down(self, process_name: str, count: int = 1) -> None:
+        """Remove workers from the pool for the given short process name."""
+        compound_key = f"{self._client._client_id}:{process_name}"
+        with self._lock:
+            pool = self._pools.get(compound_key)
+        if pool is not None:
+            pool.scale_down(count)
+
+    def destroy_pool(self, process_name: str) -> None:
+        """Stop and remove a pool by its short process name."""
+        compound_key = f"{self._client._client_id}:{process_name}"
+        with self._lock:
+            pool = self._pools.pop(compound_key, None)
+        if pool is not None:
+            pool.stop()
+
+    def destroy_all(self) -> None:
+        """Stop every pool (called during parent disconnect)."""
+        with self._lock:
+            pools = dict(self._pools)
+            self._pools.clear()
+        for pool in pools.values():
             try:
-                replica.disconnect()
+                pool.stop()
             except Exception:
                 pass
 
-    def destroy_all(self) -> None:
-        """Disconnect every replica (called during parent disconnect)."""
+    def get_all_metrics(self) -> List[dict]:
+        """Aggregate metrics from every pool for the server push."""
         with self._lock:
-            replicas = dict(self._replicas)
-            self._replicas.clear()
-        for rid, rep in replicas.items():
+            pools = list(self._pools.values())
+        return [p.get_metrics() for p in pools]
+
+    def check_local_autoscale(self) -> None:
+        """Trigger local auto-scaling on every pool."""
+        with self._lock:
+            pools = list(self._pools.values())
+        for p in pools:
             try:
-                rep.disconnect()
+                p.check_local_autoscale()
             except Exception:
                 pass

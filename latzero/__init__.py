@@ -23,6 +23,16 @@ from .core.memory import configure_serializer, get_serializer
 from .core.cleanup import start_cleanup_daemon, stop_cleanup_daemon, cleanup_orphaned_memory
 from .server_client import LatZero, ServerNamespacedClient
 
+# Worker backends
+from .worker import (
+    WorkerKind,
+    WorkerBackend,
+    ThreadWorkerBackend,
+    ProcessWorkerBackend,
+    AdaptiveWorkerBackend,
+    IncomingWorkerPool,
+)
+
 # Events API
 from .core.events import EventEmitter
 from .core.events_types import EventError, EventTimeout, EventMode
@@ -90,6 +100,14 @@ __all__ = [
     'configure_logging',
     'get_logger',
     
+    # Worker backends
+    'WorkerKind',
+    'WorkerBackend',
+    'ThreadWorkerBackend',
+    'ProcessWorkerBackend',
+    'AdaptiveWorkerBackend',
+    'IncomingWorkerPool',
+
     # Exceptions
     'LatzeroError',
     'PoolNotFound',

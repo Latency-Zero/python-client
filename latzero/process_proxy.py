@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 if TYPE_CHECKING:
     from .server_client import LatZero
 
+from .worker import WorkerKind
+
 
 class ProcessProxy:
     """
@@ -24,24 +26,18 @@ class ProcessProxy:
         client.process.register(add)                    # → "worker-1:add"
         client.process.register(add, name="sum")        # explicit override
 
-        # Decorator forms
-        @client.process.register
+        # With worker backend configuration
+        @client.process.register(worker_kind=WorkerKind.THREAD, min_workers=2, max_workers=20)
         def multiply(x, y): return x * y
 
-        @client.process.register(name="mul")
-        def multiply(x, y): return x * y
-
-        # Call (blocking)
+        # Call by full ID or short name (server picks client)
         result = client.process.call("worker-1:add", x=3, y=4)
-
-        # Call with triangular routing (non-blocking)
-        client.process.call("worker-1:add", response_to="client-3", x=3, y=4)
+        result = client.process.call("add", x=3, y=4)   # short-name → server RR
 
         # Broadcast
         targets = client.process.broadcast("add", x=3, y=4)
 
         # List
-        procs = client.process.list()
         procs = client.process.list("worker-1")
 
         # Unregister
@@ -65,27 +61,37 @@ class ProcessProxy:
         scale: bool = False,
         max_replicas: int = 10,
         group_id: Optional[str] = None,
+        worker_kind: WorkerKind = WorkerKind.THREAD,
+        min_workers: int = 1,
+        max_workers: int = 10,
     ):
         """
         Register a callable as a named process.
 
-        Supports four call styles::
+        Supports::
 
             client.process.register(fn)
-            client.process.register(fn, name="override")
-            client.process.register(fn, scale=True, max_replicas=5)
-            client.process.register(fn, scale=True, group_id="...")
+            client.process.register(fn, name="override", scale=True, max_replicas=5)
+            client.process.register(fn, worker_kind=WorkerKind.PROCESS, min_workers=2)
             @client.process.register
-            @client.process.register(name="override")
+            @client.process.register(name="override", worker_kind=WorkerKind.ADAPTIVE)
         """
         if fn is None:
             def decorator(f: Callable) -> Callable:
-                self._do_register(f, name or f.__name__, scale=scale, max_replicas=max_replicas, group_id=group_id)
+                self._do_register(
+                    f, name or f.__name__,
+                    scale=scale, max_replicas=max_replicas, group_id=group_id,
+                    worker_kind=worker_kind, min_workers=min_workers, max_workers=max_workers,
+                )
                 return f
             return decorator
 
         if callable(fn):
-            self._do_register(fn, name or fn.__name__, scale=scale, max_replicas=max_replicas, group_id=group_id)
+            self._do_register(
+                fn, name or fn.__name__,
+                scale=scale, max_replicas=max_replicas, group_id=group_id,
+                worker_kind=worker_kind, min_workers=min_workers, max_workers=max_workers,
+            )
             return fn
 
         raise TypeError("register() expects a callable as the first argument")
@@ -97,6 +103,9 @@ class ProcessProxy:
         scale: bool = False,
         max_replicas: int = 10,
         group_id: Optional[str] = None,
+        worker_kind: WorkerKind = WorkerKind.THREAD,
+        min_workers: int = 1,
+        max_workers: int = 10,
     ) -> None:
         if not process_name:
             raise ValueError(
@@ -104,36 +113,49 @@ class ProcessProxy:
                 "Pass name= explicitly:  client.process.register(fn, name='my_proc')"
             )
 
-        # Wrap async coroutines so they run synchronously in the receiver thread
-        if asyncio.iscoroutinefunction(fn):
-            _orig = fn
-
-            def _sync_wrapper(**kwargs: Any) -> Any:
-                loop = asyncio.new_event_loop()
-                try:
-                    return loop.run_until_complete(_orig(**kwargs))
-                finally:
-                    loop.close()
-
-            wrapped: Callable = _sync_wrapper
-        else:
-            wrapped = fn
-
+        # Store the raw function (backends handle async coroutines internally)
         client = self._client
-        client._processes[process_name] = wrapped
+        client._processes[process_name] = fn
 
-        # Wire into _event_handlers under the compound key so that the
-        # existing _handle_incoming_app_call dispatch picks it up automatically.
+        # Wire into _event_handlers as fallback for non-scalable paths
         compound_key = f"{client._client_id}:{process_name}"
-        client._event_handlers[compound_key] = [wrapped]
+        client._event_handlers[compound_key] = [fn]
 
-        payload: dict = {"process_name": process_name}
+        # Build payload
+        payload: dict = {
+            "process_name": process_name,
+            "worker_kind": worker_kind.value,
+            "min_workers": min_workers,
+            "max_workers": max_workers,
+        }
         if scale:
             payload["scale"] = True
             payload["max_replicas"] = max_replicas
         if group_id:
             payload["group_id"] = group_id
-        client._request("register_process", payload=payload)
+
+        # Register on server
+        reply = client._request("register_process", payload=payload)
+        ack_payload = reply.get("payload") or {}
+
+        # Set up local worker pool via ReplicaManager
+        rm = client._replica_manager
+        if rm is None:
+            from .server_client import ReplicaManager
+            rm = ReplicaManager(client)
+            client._replica_manager = rm
+
+        rm.setup_pool(
+            process_name=process_name,
+            fn=fn,
+            worker_kind=worker_kind,
+            min_workers=min_workers,
+            max_workers=max_workers,
+        )
+
+        # Start metrics push if not already running
+        if client._metrics_push_thread is None:
+            client._start_metrics_push()
 
     # ------------------------------------------------------------------
     # unregister
@@ -146,6 +168,9 @@ class ProcessProxy:
         compound_key = f"{client._client_id}:{name}"
         client._event_handlers.pop(compound_key, None)
         client._request("unregister_process", payload={"process_name": name})
+        # Destroy local worker pool
+        if client._replica_manager is not None:
+            client._replica_manager.destroy_pool(name)
 
     # ------------------------------------------------------------------
     # call
@@ -159,7 +184,11 @@ class ProcessProxy:
         **data: Any,
     ) -> Any:
         """
-        Call a registered process by its full ID (``client_id:process_name``).
+        Call a registered process.
+
+        * ``process_id`` contains ``:`` → direct targeting (full ID).
+        * ``process_id`` has no ``:``   → short-name; server picks a client
+          via round-robin and routes to it.
 
         * ``response_to`` omitted  → blocks and returns the result.
         * ``response_to`` set      → returns ``None`` immediately; result is
@@ -170,8 +199,9 @@ class ProcessProxy:
         client = self._client
         _ensure_jsonable(data)
 
+        client._check_connected()
+
         if response_to is not None:
-            # Non-blocking: only need the routing ack
             client._request(
                 "call_process",
                 payload={
@@ -184,8 +214,6 @@ class ProcessProxy:
             )
             return None
 
-        # Blocking: manually manage the pending queue so we can catch
-        # both the ack (routing confirmed) and the app_result (actual result).
         request_id = client._next_request_id()
         pending: "_queue.Queue[dict]" = _queue.Queue()
         client._pending[request_id] = pending
@@ -244,12 +272,12 @@ class ProcessProxy:
     # list
     # ------------------------------------------------------------------
 
-    def list(self, pattern: Optional[str] = None) -> Dict[str, str]:
+    def list(self, pattern: Optional[str] = None) -> Dict[str, Any]:
         """
         List all registered processes in the pool.
 
-        ``pattern`` filters by client_id prefix (e.g. ``"worker-1"``).
-        Returns a dict mapping ``process_id → client_id``.
+        Returns a dict mapping ``process_id → { client_id, worker_kind,
+        worker_count, queue_depth, ... }``.
         """
         reply = self._client._request(
             "list_processes",
@@ -257,10 +285,6 @@ class ProcessProxy:
         )
         return dict((reply.get("payload") or {}).get("processes", {}))
 
-
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
 
 def _ensure_jsonable(value: Any) -> None:
     import json
