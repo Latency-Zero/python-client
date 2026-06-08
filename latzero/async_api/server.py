@@ -65,6 +65,9 @@ class AsyncLatZero:
     async def keys(self, pattern: Optional[str] = None) -> List[str]:
         return await asyncio.to_thread(self._client.keys, pattern)
 
+    async def clients(self) -> List[str]:
+        return await asyncio.to_thread(self._client.clients)
+
     async def mset(self, data: dict, auto_clean: Optional[int] = None, persistent: bool = False) -> None:
         await asyncio.to_thread(self._client.mset, data, auto_clean, persistent)
 

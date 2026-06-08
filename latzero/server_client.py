@@ -501,6 +501,10 @@ class LatZero:
         reply = self._request("list_buffers", payload={"pattern": pattern})
         return list((reply.get("payload") or {}).get("keys", []))
 
+    def clients(self) -> List[str]:
+        reply = self._request("list_clients", payload={})
+        return list((reply.get("payload") or {}).get("clients", []))
+
     def values(self, pattern: Optional[str] = None) -> List[Any]:
         return [self.get(key) for key in self.keys(pattern)]
 
